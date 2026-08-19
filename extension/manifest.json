@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "aceit 小红书采集",
+  "version": "0.1.0",
+  "description": "在小红书笔记页按 Cmd+Shift+S，把当前笔记推送到 aceit inbox。",
+  "host_permissions": [
+    "https://*.xiaohongshu.com/*",
+    "http://localhost:3000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.xiaohongshu.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://*.xiaohongshu.com/*"]
+    }
+  ]
+}
