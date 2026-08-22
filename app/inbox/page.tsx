@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { inboxItems, insights, questions } from "@/lib/db/schema";
 import { WorkShell } from "@/components/work-shell";
@@ -27,17 +27,32 @@ export default async function InboxPage() {
     .orderBy(desc(inboxItems.createdAt), desc(inboxItems.id))
     .all();
 
+  // 只取没被归并掉的，并带上来源笔记的标题和链接
   const allInsights = db
-    .select()
+    .select({
+      insight: insights,
+      sourceTitle: inboxItems.title,
+      sourceUrl: inboxItems.sourceUrl,
+    })
     .from(insights)
+    .leftJoin(inboxItems, eq(insights.inboxItemId, inboxItems.id))
+    .where(isNull(insights.mergedInto))
     .orderBy(desc(insights.id))
     .all();
 
   const inboxQuestions = db
     .select()
     .from(questions)
-    .where(eq(questions.source, "inbox"))
+    .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
     .all();
+
+  // 按主题聚合，条数多的主题排前面
+  const byTopic = new Map<string, typeof allInsights>();
+  for (const row of allInsights) {
+    const key = row.insight.topic ?? "未分类";
+    byTopic.set(key, [...(byTopic.get(key) ?? []), row]);
+  }
+  const topics = [...byTopic.entries()].sort((a, b) => b[1].length - a[1].length);
 
   const rows: DigestRow[] = items.map((item) => {
     let imageCount = 0;
@@ -54,7 +69,7 @@ export default async function InboxPage() {
       type: item.type,
       imageCount,
       questionCount: 0, // 面经题不挂 inbox_item，统计放在下面汇总
-      insightCount: allInsights.filter((i) => i.inboxItemId === item.id).length,
+      insightCount: allInsights.filter((r) => r.insight.inboxItemId === item.id).length,
     };
   });
 
@@ -121,31 +136,68 @@ export default async function InboxPage() {
             <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
               What to steal
             </p>
-            <p className="font-mono text-meta text-muted-foreground">{allInsights.length}</p>
+            <p className="font-mono text-meta text-muted-foreground">
+              {allInsights.length} in {topics.length} topics
+            </p>
           </div>
-          {allInsights.length === 0 ? (
+
+          {topics.length === 0 ? (
             <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
               Nothing yet.
             </p>
           ) : (
-            <ul className="space-y-2">
-              {allInsights.slice(0, 20).map((i) => (
-                <li key={i.id} className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-2">
-                    <span className={`rounded-pill px-2.5 py-0.5 text-meta ${KIND_TONE[i.kind]}`}>
-                      {KIND_LABEL[i.kind]}
+            <div className="space-y-2">
+              {topics.map(([topic, rows]) => (
+                <details
+                  key={topic}
+                  open={rows.length >= 3}
+                  className="rounded-lg border border-border bg-surface"
+                >
+                  <summary className="flex cursor-pointer items-center gap-3 px-5 py-3.5">
+                    <span className="text-section">{topic}</span>
+                    <span className="ml-auto font-mono text-meta text-muted-foreground">
+                      {rows.length}
                     </span>
-                    {i.company && (
-                      <span className="font-mono text-meta text-muted-foreground">
-                        {i.company}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-2 text-body">{i.title}</p>
-                  <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
-                </li>
+                  </summary>
+                  <ul className="space-y-4 border-t border-border px-5 py-4">
+                    {rows.map(({ insight: i, sourceTitle, sourceUrl }) => (
+                      <li key={i.id}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-pill px-2.5 py-0.5 text-meta ${KIND_TONE[i.kind]}`}
+                          >
+                            {KIND_LABEL[i.kind]}
+                          </span>
+                          {i.company && (
+                            <span className="font-mono text-meta text-muted-foreground">
+                              {i.company}
+                            </span>
+                          )}
+                          {sourceUrl ? (
+                            <a
+                              href={sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="ml-auto max-w-[14rem] truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
+                            >
+                              {sourceTitle || "原文"} ↗
+                            </a>
+                          ) : (
+                            sourceTitle && (
+                              <span className="ml-auto max-w-[14rem] truncate text-meta text-muted-foreground">
+                                {sourceTitle}
+                              </span>
+                            )
+                          )}
+                        </div>
+                        <p className="mt-2 text-body">{i.title}</p>
+                        <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               ))}
-            </ul>
+            </div>
           )}
         </section>
       </div>

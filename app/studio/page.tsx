@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { answers, experiences, questions, roleProfiles } from "@/lib/db/schema";
 import { WorkShell } from "@/components/work-shell";
@@ -23,14 +23,31 @@ export default async function StudioPage({
     ? requested
     : (roles[0]?.id ?? null);
 
-  const rows = activeRoleId
+  // 这个岗位生成的题
+  const roleRows = activeRoleId
     ? db
         .select()
         .from(questions)
-        .where(eq(questions.roleId, activeRoleId))
+        .where(and(eq(questions.roleId, activeRoleId), isNull(questions.mergedInto)))
         .orderBy(asc(questions.id))
         .all()
     : [];
+
+  // 面经里别人真被问过的题：不挂岗位，但同样值得练
+  const wildRows = db
+    .select()
+    .from(questions)
+    .where(
+      and(
+        eq(questions.source, "inbox"),
+        isNull(questions.roleId),
+        isNull(questions.mergedInto)
+      )
+    )
+    .orderBy(asc(questions.id))
+    .all();
+
+  const rows = [...roleRows, ...wildRows];
 
   const allAnswers = db.select().from(answers).orderBy(asc(answers.version)).all();
   const items: QuestionWithAnswers[] = rows.map((question) => ({
@@ -61,7 +78,7 @@ export default async function StudioPage({
           Questions
         </p>
         <p className="font-mono text-meta text-muted-foreground">
-          {items.length} questions · {answered} drafted
+          {roleRows.length} for this role · {wildRows.length} from the wild · {answered} drafted
         </p>
       </div>
 

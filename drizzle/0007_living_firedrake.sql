@@ -1,0 +1,1 @@
+ALTER TABLE `questions` ADD `merged_into` integer;

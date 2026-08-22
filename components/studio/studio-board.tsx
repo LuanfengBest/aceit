@@ -137,6 +137,11 @@ export function StudioBoard({
                       <span className={`rounded-pill px-2 py-0.5 text-meta ${KIND_TONE[question.kind]}`}>
                         {KIND_LABEL[question.kind]}
                       </span>
+                      {question.source === "inbox" && (
+                        <span className="rounded-pill bg-surface-2 px-2 py-0.5 text-meta text-muted-foreground">
+                          From the wild
+                        </span>
+                      )}
                       <span className="ml-auto font-mono text-meta text-muted-foreground">
                         {answers.length > 0 ? `v${answers.length}` : "—"}
                       </span>

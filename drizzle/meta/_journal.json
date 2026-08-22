@@ -43,6 +43,20 @@
       "when": 1787435099580,
       "tag": "0005_spicy_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787435575549,
+      "tag": "0006_outstanding_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787435697956,
+      "tag": "0007_living_firedrake",
+      "breakpoints": true
     }
   ]
 }

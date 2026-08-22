@@ -73,6 +73,32 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
         <p className="font-mono text-meta text-muted-foreground">
           {rows.length} total · {pending.length} to digest
         </p>
+        <span className="ml-auto" />
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={async () => {
+            setBusy(-1);
+            setError(null);
+            try {
+              const res = await fetch("/api/inbox/consolidate", { method: "POST" });
+              const body = await res.json();
+              if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+              setLog((l) => [
+                `整理：${body.insights} 条知识归成 ${body.topics} 个主题，合并 ${body.merged} 条；题去重 ${body.questionsMerged} 条`,
+                ...l,
+              ]);
+              router.refresh();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : String(err));
+            } finally {
+              setBusy(null);
+            }
+          }}
+          className="rounded-md border border-border px-3 py-1.5 text-meta text-muted-foreground transition-colors hover:border-accent disabled:opacity-40"
+        >
+          {busy === -1 ? "Tidying…" : "Dedupe & group"}
+        </button>
         <button
           type="button"
           disabled={busy !== null || pending.length === 0}

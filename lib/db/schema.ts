@@ -111,6 +111,8 @@ export const questions = sqliteTable("questions", {
   source: text("source", { enum: ["role", "material", "inbox", "manual"] })
     .notNull()
     .default("role"),
+  /** 判定为重复时指向保留的那条。标记而不删除，判错了还能捞回来 */
+  mergedInto: integer("merged_into"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -188,6 +190,10 @@ export const insights = sqliteTable("insights", {
   content: text("content").notNull(),
   /** 关联的公司名，没有就 null */
   company: text("company"),
+  /** 主题分组。同一主题的多条会归并到一起展示，避免几百条平铺 */
+  topic: text("topic"),
+  /** 被归并掉的指向留存的那条；非 null 表示这条是重复项，不展示 */
+  mergedInto: integer("merged_into"),
   /** 能力标签，和 experiences.tags 对齐，JSON 数组 */
   tags: text("tags").notNull().default("[]"),
   createdAt: integer("created_at", { mode: "timestamp" })
