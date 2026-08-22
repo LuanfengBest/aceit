@@ -1,0 +1,168 @@
+import { callLLMObject, type LLMImage } from "@/lib/llm";
+import type { NewInsight, NewQuestion } from "@/lib/db/schema";
+
+/** 一条笔记最多读几张图。小红书面经常把干货做成长图，但也别一次烧太多 */
+const MAX_IMAGES = 6;
+
+const SYSTEM = `你在消化一条外部素材（多半是小红书的面经、行业分享、公司情报）。
+
+**重要：干货经常整个写在图片里**，正文可能只有一句话。图片一定要仔细读，把里面的文字内容都提取出来。
+
+产出两类东西：
+
+一、面试题（questions）
+- 素材里提到的**被问过的具体问题**，逐条抽出来，保留原本的问法。
+- 只要真实被问过的题，不要自己编，也不要把"我觉得可以准备一下xx"当成题。
+- kind 分类：behavioral / technical / case / resume / other
+- cluster 用英文小写下划线给同类问题起个名，如 agent_intent_recognition
+
+二、参考知识（insights）
+- approach：**回答思路和结构**。别人怎么答的、什么结构拿到了好评、面试官在追问什么方向。这是最有价值的一类，尽量抽全。
+- company：这家公司/这个岗位的具体情况。面试流程几轮、考什么、什么风格、什么标准。
+- term：行业黑话、评价标准、岗位术语的具体含义。
+- pitfall：踩坑记录。什么答法翻车了、什么雷区不能碰。
+
+规则：
+- 只提取素材里**真的写了**的内容，不要用你自己的通用面试知识补充。
+- 素材如果只是泛泛的鸡汤、广告、引流，两类都返回空数组，不要硬凑。
+- company 字段：能看出是哪家公司就填，看不出填空字符串。`;
+
+const SCHEMA = {
+  type: "object",
+  properties: {
+    company: { type: "string", description: "这条素材主要讲哪家公司，看不出填空字符串" },
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          kind: {
+            type: "string",
+            enum: ["behavioral", "technical", "case", "resume", "other"],
+          },
+          cluster: { type: "string" },
+        },
+        required: ["text", "kind", "cluster"],
+        additionalProperties: false,
+      },
+    },
+    insights: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["approach", "company", "term", "pitfall"],
+          },
+          title: { type: "string", description: "一句话标题" },
+          content: { type: "string", description: "具体内容，讲清楚可操作的部分" },
+          tags: { type: "array", items: { type: "string" } },
+        },
+        required: ["kind", "title", "content", "tags"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["company", "questions", "insights"],
+  additionalProperties: false,
+} as const;
+
+export interface DigestResult {
+  company: string;
+  questions: Omit<NewQuestion, "roleId">[];
+  insights: Omit<NewInsight, "inboxItemId">[];
+}
+
+/** 把图片下下来转 base64。失败的跳过，不要因为一张图挂掉整条 */
+async function loadImages(urls: string[]): Promise<LLMImage[]> {
+  const picked = urls.slice(0, MAX_IMAGES);
+  const loaded: (LLMImage | null)[] = await Promise.all(
+    picked.map(async (url): Promise<LLMImage | null> => {
+      try {
+        const res = await fetch(url, {
+          headers: { Referer: "https://www.xiaohongshu.com/" },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        // 太大的图先跳过，避免单条请求超限
+        if (buf.byteLength > 4_500_000) return null;
+        const mediaType = res.headers.get("content-type") ?? "image/webp";
+        return { data: buf.toString("base64"), mediaType };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return loaded.filter((x): x is LLMImage => x !== null);
+}
+
+export async function digestInboxItem(item: {
+  title: string | null;
+  desc: string | null;
+  author: string | null;
+  images: string[];
+}): Promise<DigestResult & { imagesRead: number }> {
+  const images = await loadImages(item.images);
+
+  const text = [
+    item.title ? `标题：${item.title}` : "",
+    item.author ? `作者：${item.author}` : "",
+    item.desc ? `正文：${item.desc}` : "",
+    images.length > 0
+      ? `\n（另附 ${images.length} 张图，干货可能主要在图里，仔细读）`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const { object } = await callLLMObject<{
+    company: string;
+    questions: { text: string; kind: string; cluster: string }[];
+    insights: { kind: string; title: string; content: string; tags: string[] }[];
+  }>(
+    // 有图走视觉任务，没图走普通抽取
+    images.length > 0 ? "extract_image" : "extract",
+    text,
+    SCHEMA,
+    { system: SYSTEM, images, maxOutputTokens: 8000 }
+  );
+
+  const KINDS = ["behavioral", "technical", "case", "resume", "other"] as const;
+  const IKINDS = ["approach", "company", "term", "pitfall"] as const;
+  const company = (object.company ?? "").trim();
+
+  return {
+    company,
+    imagesRead: images.length,
+    questions: (object.questions ?? [])
+      .map((q) => ({
+        text: (q.text ?? "").trim(),
+        kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
+          ? q.kind
+          : "other") as (typeof KINDS)[number],
+        clusterId: (q.cluster ?? "").trim() || null,
+        rationale: company ? `来自面经：${company}` : "来自外部面经",
+        source: "inbox" as const,
+      }))
+      .filter((q) => q.text),
+    insights: (object.insights ?? [])
+      .map((i) => ({
+        kind: (IKINDS.includes(i.kind as (typeof IKINDS)[number])
+          ? i.kind
+          : "approach") as (typeof IKINDS)[number],
+        title: (i.title ?? "").trim(),
+        content: (i.content ?? "").trim(),
+        company: company || null,
+        tags: JSON.stringify(
+          (Array.isArray(i.tags) ? i.tags : [])
+            .filter((t): t is string => typeof t === "string")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        ),
+      }))
+      .filter((i) => i.title && i.content),
+  };
+}

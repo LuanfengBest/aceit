@@ -166,3 +166,34 @@ export type Answer = typeof answers.$inferSelect;
 export type NewAnswer = typeof answers.$inferInsert;
 export type InterviewQa = typeof interviewQas.$inferSelect;
 export type NewInterviewQa = typeof interviewQas.$inferInsert;
+
+// ---- 模块 E：外部情报消化 ----
+
+/**
+ * 从 inbox 素材里嚼出来的可用知识。
+ * 面试题不进这里——那些直接进 questions 表（source='inbox'），
+ * 这里放的是"怎么答"和"这家公司什么情况"这类参考。
+ */
+export const insights = sqliteTable("insights", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  inboxItemId: integer("inbox_item_id")
+    .notNull()
+    .references(() => inboxItems.id, { onDelete: "cascade" }),
+  kind: text("kind", {
+    enum: ["approach", "company", "term", "pitfall"],
+  })
+    .notNull()
+    .default("approach"),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  /** 关联的公司名，没有就 null */
+  company: text("company"),
+  /** 能力标签，和 experiences.tags 对齐，JSON 数组 */
+  tags: text("tags").notNull().default("[]"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type Insight = typeof insights.$inferSelect;
+export type NewInsight = typeof insights.$inferInsert;

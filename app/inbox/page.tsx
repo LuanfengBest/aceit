@@ -1,50 +1,62 @@
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { inboxItems, type InboxItem } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { inboxItems, insights, questions } from "@/lib/db/schema";
 import { WorkShell } from "@/components/work-shell";
+import { DigestPanel, type DigestRow } from "@/components/inbox/digest-panel";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_LABEL: Record<InboxItem["status"], string> = {
-  pending: "待处理",
-  processed: "已处理",
-  failed: "失败",
+const KIND_LABEL: Record<string, string> = {
+  approach: "How to answer",
+  company: "Company intel",
+  term: "Terminology",
+  pitfall: "Pitfall",
 };
 
-// 待处理是唯一需要我动手的状态，所以只有它吃强调色
-const STATUS_STYLE: Record<InboxItem["status"], string> = {
-  pending: "bg-accent-soft text-accent",
-  processed: "bg-surface-2 text-muted-foreground",
-  failed: "bg-surface-2 text-danger",
+const KIND_TONE: Record<string, string> = {
+  approach: "bg-mint text-mint-ink",
+  company: "bg-lavender text-lavender-ink",
+  term: "bg-lemon text-lemon-ink",
+  pitfall: "bg-peach text-peach-ink",
 };
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-// 不用 toLocaleString：服务端渲染时它跟着服务器 locale 走，输出不稳定
-function formatDateTime(date: Date | null) {
-  if (!date) return "—";
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}`;
-}
 
 export default async function InboxPage() {
   const items = db
     .select()
     .from(inboxItems)
-    .orderBy(desc(inboxItems.createdAt))
+    .orderBy(desc(inboxItems.createdAt), desc(inboxItems.id))
     .all();
 
-  const pendingCount = items.filter((i) => i.status === "pending").length;
+  const allInsights = db
+    .select()
+    .from(insights)
+    .orderBy(desc(insights.id))
+    .all();
+
+  const inboxQuestions = db
+    .select()
+    .from(questions)
+    .where(eq(questions.source, "inbox"))
+    .all();
+
+  const rows: DigestRow[] = items.map((item) => {
+    let imageCount = 0;
+    try {
+      const parsed = JSON.parse(item.images ?? "[]");
+      imageCount = Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      imageCount = 0;
+    }
+    return {
+      id: item.id,
+      title: item.title || "(no title)",
+      status: item.status,
+      type: item.type,
+      imageCount,
+      questionCount: 0, // 面经题不挂 inbox_item，统计放在下面汇总
+      insightCount: allInsights.filter((i) => i.inboxItemId === item.id).length,
+    };
+  });
 
   return (
     <WorkShell
@@ -57,88 +69,85 @@ export default async function InboxPage() {
       <div className="mb-5 rounded-lg border border-border bg-surface-2 p-5">
         <p className="text-body">
           Found an interview debrief? A teardown of the team you&rsquo;re about to meet? Drop it
-          here — Aceit pulls out <span className="text-foreground">the questions they asked</span>,{" "}
-          <span className="text-foreground">how the good answers were structured</span>, and
-          anything worth knowing about that company, then files it next to your own material.
+          here — Aceit reads it (<span className="text-foreground">including the text inside
+          screenshots</span>), pulls out{" "}
+          <span className="text-foreground">the questions they asked</span> and{" "}
+          <span className="text-foreground">how the good answers were structured</span>, then files
+          them next to your own material.
         </p>
         <p className="mt-3 font-mono text-meta text-muted-foreground">
-          OR HIT ⌘⇧S ON ANY 小红书 NOTE WITH THE EXTENSION
+          ⌘⇧S ON ANY 小红书 NOTE WITH THE EXTENSION
         </p>
       </div>
 
-      <div className="mb-4 flex items-baseline justify-between">
-        <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
-          Signals
-        </p>
-        <p className="font-mono text-meta text-muted-foreground">
-          {items.length} total{pendingCount > 0 && ` · ${pendingCount} to process`}
-        </p>
-      </div>
+      <DigestPanel rows={rows} />
 
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
-        <table className="w-full table-fixed border-collapse text-body">
-          <thead>
-            <tr className="border-b border-border bg-surface-2 text-left text-meta text-muted-foreground">
-              <th className="px-5 py-2.5 font-normal">标题</th>
-              <th className="w-32 px-5 py-2.5 font-normal">作者</th>
-              <th className="w-20 px-5 py-2.5 font-normal">类型</th>
-              <th className="w-24 px-5 py-2.5 font-normal">状态</th>
-              <th className="w-32 px-5 py-2.5 font-normal">发布</th>
-              <th className="w-40 px-5 py-2.5 font-normal">入库</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr
-                key={item.id}
-                className="h-row border-b border-border transition-colors last:border-b-0 hover:bg-surface-2"
-              >
-                <td className="truncate px-5">
-                  {item.sourceUrl ? (
-                    <a
-                      href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
-                    >
-                      {item.title || "(无标题)"}
-                    </a>
-                  ) : (
-                    item.title || "(无标题)"
+      {/* 消化产出 */}
+      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <section>
+          <div className="mb-3 flex items-baseline justify-between">
+            <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+              Questions from the wild
+            </p>
+            <p className="font-mono text-meta text-muted-foreground">
+              {inboxQuestions.length}
+            </p>
+          </div>
+          {inboxQuestions.length === 0 ? (
+            <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
+              Nothing yet. Digest a signal above.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {inboxQuestions.slice(0, 24).map((q) => (
+                <li
+                  key={q.id}
+                  className="rounded-lg border border-border bg-surface px-4 py-3 text-body"
+                >
+                  {q.text}
+                  {q.clusterId && (
+                    <span className="ml-2 font-mono text-meta text-muted-foreground">
+                      {q.clusterId}
+                    </span>
                   )}
-                </td>
-                <td className="truncate px-5 text-muted-foreground">
-                  {item.author || "—"}
-                </td>
-                <td className="px-5 text-meta text-muted-foreground">
-                  {item.type === "video" ? "视频" : "图文"}
-                </td>
-                <td className="px-5">
-                  <span
-                    className={`inline-flex items-center rounded-pill px-2 py-0.5 text-meta ${
-                      STATUS_STYLE[item.status]
-                    }`}
-                  >
-                    {STATUS_LABEL[item.status]}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-5 text-meta text-muted-foreground">
-                  {formatDate(item.publishedAt)}
-                </td>
-                <td className="whitespace-nowrap px-5 text-meta text-muted-foreground">
-                  {formatDateTime(item.createdAt)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-        {items.length === 0 && (
-          <p className="px-5 py-10 text-center text-meta text-muted-foreground">
-            No signals yet. Paste a link or a block of text — anything you&rsquo;d otherwise
-            screenshot and forget.
-          </p>
-        )}
+        <section>
+          <div className="mb-3 flex items-baseline justify-between">
+            <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+              What to steal
+            </p>
+            <p className="font-mono text-meta text-muted-foreground">{allInsights.length}</p>
+          </div>
+          {allInsights.length === 0 ? (
+            <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
+              Nothing yet.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {allInsights.slice(0, 20).map((i) => (
+                <li key={i.id} className="rounded-lg border border-border bg-surface p-4">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-pill px-2.5 py-0.5 text-meta ${KIND_TONE[i.kind]}`}>
+                      {KIND_LABEL[i.kind]}
+                    </span>
+                    {i.company && (
+                      <span className="font-mono text-meta text-muted-foreground">
+                        {i.company}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-body">{i.title}</p>
+                  <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </WorkShell>
   );
