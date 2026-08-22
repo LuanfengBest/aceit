@@ -16,6 +16,11 @@ export const inboxItems = sqliteTable("inbox_items", {
   videoUrl: text("video_url"),
   tags: text("tags"),
   publishedAt: text("published_at"),
+  /**
+   * 视频笔记在采集当下抽好的帧（本地文件路径 JSON 数组）。
+   * 小红书视频直链带签名会过期，事后再去拉是 403，只能采集时就抓。
+   */
+  frames: text("frames").notNull().default("[]"),
   raw: text("raw").notNull(),
   status: text("status", { enum: ["pending", "processed", "failed"] })
     .notNull()
@@ -113,6 +118,10 @@ export const questions = sqliteTable("questions", {
     .default("role"),
   /** 判定为重复时指向保留的那条。标记而不删除，判错了还能捞回来 */
   mergedInto: integer("merged_into"),
+  /** 追问挂在主问题下。null 表示这本身就是主问题 */
+  parentId: integer("parent_id"),
+  /** 主题分组，和 insights.topic 共用同一套命名 */
+  topic: text("topic"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

@@ -57,6 +57,20 @@
       "when": 1787435697956,
       "tag": "0007_living_firedrake",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787436011573,
+      "tag": "0008_dizzy_black_crow",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787436361549,
+      "tag": "0009_complex_frightful_four",
+      "breakpoints": true
     }
   ]
 }

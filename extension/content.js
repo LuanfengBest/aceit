@@ -40,6 +40,62 @@
     });
   }
 
+  /**
+   * 视频笔记：采集当下就抽几帧。
+   * 小红书视频直链带签名会过期，事后服务端再去拉是 403，所以必须在这里抓。
+   * 先把视频 fetch 成 blob（页面上下文带着正确的 Referer 和 cookie），
+   * 再用 blob URL 喂给一个新的 video 元素——这样 canvas 不会被跨域污染。
+   */
+  async function grabFrames(videoUrl, count = 4) {
+    if (!videoUrl) return [];
+    let objectUrl = null;
+    try {
+      const res = await fetch(videoUrl);
+      if (!res.ok) return [];
+      const blob = await res.blob();
+      objectUrl = URL.createObjectURL(blob);
+
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.src = objectUrl;
+
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = () => reject(new Error("视频解码失败"));
+        setTimeout(() => reject(new Error("视频加载超时")), 20000);
+      });
+
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      if (duration <= 0) return [];
+
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 1080 / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const ctx = canvas.getContext("2d");
+
+      const frames = [];
+      for (let i = 1; i <= count; i++) {
+        // 均匀取样，跳过片头片尾
+        const t = (duration * i) / (count + 1);
+        await new Promise((resolve, reject) => {
+          video.onseeked = resolve;
+          video.onerror = () => reject(new Error("seek 失败"));
+          video.currentTime = t;
+          setTimeout(resolve, 4000);
+        });
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        frames.push(canvas.toDataURL("image/jpeg", 0.82));
+      }
+      return frames;
+    } catch {
+      return [];
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   // 视频直链藏在 note 的多层结构里，直接对 JSON 文本做正则最省事。优先 mp4。
   function pickVideoUrl(noteJson) {
     const matches = noteJson.match(/https?:[^"]*?\.(mp4|m3u8)[^"]*/g);
@@ -47,7 +103,11 @@
     return matches.find((u) => u.includes(".mp4")) || matches[0];
   }
 
-  function buildPayload(note, noteJson) {
+  async function buildPayload(note, noteJson) {
+    const videoUrl = note.type === "video" ? pickVideoUrl(noteJson) : null;
+    // 视频笔记多抓几帧，图文笔记不用
+    const frames = videoUrl ? await grabFrames(videoUrl) : [];
+
     const images = (note.imageList || [])
       .map((img) => img.urlDefault || img.urlPre || img.url)
       .filter(Boolean);
@@ -62,7 +122,8 @@
       desc: note.desc || null,
       author: (note.user && note.user.nickname) || null,
       images,
-      video_url: note.type === "video" ? pickVideoUrl(noteJson) : null,
+      video_url: videoUrl,
+      frames,
       tags,
       published_at: note.time ? new Date(note.time).toISOString() : null,
       raw: note,
@@ -79,10 +140,13 @@
       const note = JSON.parse(noteJson);
       if (!note.noteId) throw new Error("笔记缺少 noteId");
 
+      if (note.type === "video") toast("正在抽取视频画面…", "pending");
+      const payload = await buildPayload(note, noteJson);
+
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload(note, noteJson)),
+        body: JSON.stringify(payload),
       });
 
       const body = await res.json().catch(() => ({}));

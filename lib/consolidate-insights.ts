@@ -13,7 +13,7 @@ const SYSTEM = `你在整理一堆从面经素材里抽出来的知识条目。�
 - 给每条分配一个 topic，把零散条目收进少数几个大主题里。
 - **优先复用已有主题名**，只有实在装不下才新建。新建也要用宽的名字，别太细。
 - 主题名用中文，4-10 字，如"讲项目的结构"、"AI搜索与RAG"、"指标与量化"、"面试官追问套路"。
-- **主题数量不要超过条目数的三分之一，且最多 10 个。** 宁可粗，不要细。
+- **主题数量有硬上限，见下面输入里给出的数字。** 超了就必须合并，宁可粗，不要细。
 - 像"AI导购的反馈优化"和"AI导购与推荐的融合"这种，必须合并成一个更宽的主题。
   判断方法：如果两个主题名里有一半的字是重复的，它们就该合并。`;
 
@@ -64,6 +64,7 @@ export async function consolidateInsights(
     .map((i) => `[id=${i.id}] (${i.kind}) ${i.title} —— ${i.content.slice(0, 220)}`)
     .join("\n");
 
+  const cap = Math.max(4, Math.min(8, Math.ceil(items.length / 4)));
   const topicsBlock =
     existingTopics.length > 0
       ? `已有主题（优先复用）：\n${existingTopics.map((t) => `- ${t}`).join("\n")}`
@@ -71,7 +72,7 @@ export async function consolidateInsights(
 
   const { object } = await callLLMObject<{
     assignments: { id: number; topic: string; duplicate_of: number | null }[];
-  }>("classify", `${topicsBlock}\n\n## 待整理的条目\n${block}`, SCHEMA, {
+  }>("classify", `主题数量上限：${cap} 个，超过就合并。\n\n${topicsBlock}\n\n## 待整理的条目\n${block}`, SCHEMA, {
     system: SYSTEM,
     maxOutputTokens: 8000,
   });
@@ -144,4 +145,110 @@ export async function findDuplicateQuestions(
   return (object.duplicates ?? []).filter(
     (d) => valid.has(d.id) && valid.has(d.keep) && d.id !== d.keep
   );
+}
+
+
+/** 给面经题归主题，复用 insights 那套主题名，两边对得上 */
+const QT_SYSTEM = `给面试题分主题，把零散的题收进少数几个大主题里。
+
+- **优先复用已有主题名**，实在装不下才新建。
+- 主题名用中文 4-10 字，如"AI搜索与RAG"、"项目讲述"、"指标与实验"。
+- 主题数量有硬上限，见输入里给出的数字。宁可粗，不要细。
+- 追问和它的主问题应该归到同一个主题。`;
+
+const QT_SCHEMA = {
+  type: "object",
+  properties: {
+    assignments: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          topic: { type: "string" },
+        },
+        required: ["id", "topic"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["assignments"],
+  additionalProperties: false,
+} as const;
+
+export async function assignQuestionTopics(
+  items: { id: number; text: string }[],
+  existingTopics: string[]
+): Promise<{ id: number; topic: string }[]> {
+  if (items.length === 0) return [];
+
+  const topicsBlock =
+    existingTopics.length > 0
+      ? `已有主题（优先复用）：\n${existingTopics.map((t) => `- ${t}`).join("\n")}`
+      : "（还没有主题，你来定）";
+
+  const { object } = await callLLMObject<{
+    assignments: { id: number; topic: string }[];
+  }>(
+    "classify",
+    `主题数量上限：${Math.max(4, Math.min(8, Math.ceil(items.length / 3)))} 个。\n\n${topicsBlock}\n\n## 待归类的题\n${items.map((q) => `[id=${q.id}] ${q.text}`).join("\n")}`,
+    QT_SCHEMA,
+    { system: QT_SYSTEM, maxOutputTokens: 6000 }
+  );
+
+  const valid = new Set(items.map((i) => i.id));
+  return (object.assignments ?? [])
+    .filter((a) => valid.has(a.id))
+    .map((a) => ({ id: a.id, topic: (a.topic ?? "").trim() || "未分类" }));
+}
+
+/** 主题攒多了就合并。输入一批主题名，输出「旧名 → 新名」的映射 */
+const MERGE_SYSTEM = `把一批主题名合并成更少、更宽的主题。
+
+- 语义接近的合并成一个，用其中最合适的名字，或者起一个更宽的新名。
+- 合并后的数量必须不超过给定的上限。
+- 每个旧主题都要有归属，不能漏。
+- 主题名保持中文 4-10 字。`;
+
+const MERGE_SCHEMA = {
+  type: "object",
+  properties: {
+    mapping: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          from: { type: "string" },
+          to: { type: "string" },
+        },
+        required: ["from", "to"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["mapping"],
+  additionalProperties: false,
+} as const;
+
+export async function mergeTopics(
+  topics: string[],
+  cap: number
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (topics.length <= cap) return result;
+
+  const { object } = await callLLMObject<{ mapping: { from: string; to: string }[] }>(
+    "classify",
+    `上限 ${cap} 个主题。\n\n现有主题：\n${topics.map((t) => `- ${t}`).join("\n")}`,
+    MERGE_SCHEMA,
+    { system: MERGE_SYSTEM, maxOutputTokens: 3000 }
+  );
+
+  const known = new Set(topics);
+  for (const m of object.mapping ?? []) {
+    const from = (m.from ?? "").trim();
+    const to = (m.to ?? "").trim();
+    if (known.has(from) && to && from !== to) result.set(from, to);
+  }
+  return result;
 }

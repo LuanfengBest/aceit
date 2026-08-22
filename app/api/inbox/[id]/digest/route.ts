@@ -18,11 +18,26 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const item = db.select().from(inboxItems).where(eq(inboxItems.id, id)).get();
   if (!item) return NextResponse.json({ error: "素材不存在" }, { status: 404 });
 
-  let images: string[] = [];
-  try {
-    images = JSON.parse(item.images ?? "[]");
-  } catch {
-    images = [];
+  const parseList = (raw: string | null): string[] => {
+    try {
+      const v = JSON.parse(raw ?? "[]");
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+  const images = parseList(item.images);
+  const frames = parseList(item.frames);
+
+  if (item.type === "video" && frames.length === 0) {
+    db.update(inboxItems).set({ status: "failed" }).where(eq(inboxItems.id, id)).run();
+    return NextResponse.json(
+      {
+        error:
+          "这条视频是旧版扩展采的，没有画面帧，而小红书视频直链已过期。用新版扩展重新采集一次即可。",
+      },
+      { status: 400 }
+    );
   }
 
   try {
@@ -30,7 +45,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
       title: item.title,
       desc: item.desc,
       author: item.author,
-      images: Array.isArray(images) ? images : [],
+      images,
+      frames,
+      isVideo: item.type === "video",
     });
 
     // 重新消化时先清掉上一轮的产物，避免重复堆积
@@ -42,10 +59,26 @@ export async function POST(_req: NextRequest, { params }: Params) {
         .run();
     }
     if (result.questions.length > 0) {
-      // 面经题进问题池，不挂岗位（roleId = null）
-      db.insert(questions)
-        .values(result.questions.map((q) => ({ ...q, roleId: null })))
-        .run();
+      // 面经题进问题池，不挂岗位（roleId = null）。
+      // 先按顺序插入拿到 id，再把追问的 parentId 补上。
+      const ids: number[] = [];
+      for (const q of result.questions) {
+        const { follows: _follows, ...row } = q;
+        const created = db
+          .insert(questions)
+          .values({ ...row, roleId: null })
+          .returning({ id: questions.id })
+          .get();
+        ids.push(created.id);
+      }
+      result.questions.forEach((q, i) => {
+        if (q.follows !== null && ids[q.follows] !== undefined) {
+          db.update(questions)
+            .set({ parentId: ids[q.follows] })
+            .where(eq(questions.id, ids[i]))
+            .run();
+        }
+      });
     }
 
     db.update(inboxItems)

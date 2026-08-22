@@ -27,7 +27,6 @@ export default async function InboxPage() {
     .orderBy(desc(inboxItems.createdAt), desc(inboxItems.id))
     .all();
 
-  // 只取没被归并掉的，并带上来源笔记的标题和链接
   const allInsights = db
     .select({
       insight: insights,
@@ -46,13 +45,30 @@ export default async function InboxPage() {
     .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
     .all();
 
-  // 按主题聚合，条数多的主题排前面
-  const byTopic = new Map<string, typeof allInsights>();
+  // 追问挂到主问题下
+  const followUps = new Map<number, typeof inboxQuestions>();
+  for (const q of inboxQuestions) {
+    if (q.parentId !== null) {
+      followUps.set(q.parentId, [...(followUps.get(q.parentId) ?? []), q]);
+    }
+  }
+  const mains = inboxQuestions.filter((q) => q.parentId === null);
+
+  // 主问题按主题归组
+  const qByTopic = new Map<string, typeof mains>();
+  for (const q of mains) {
+    const key = q.topic ?? "未分类";
+    qByTopic.set(key, [...(qByTopic.get(key) ?? []), q]);
+  }
+  const questionTopics = [...qByTopic.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  // 知识按主题归组
+  const iByTopic = new Map<string, typeof allInsights>();
   for (const row of allInsights) {
     const key = row.insight.topic ?? "未分类";
-    byTopic.set(key, [...(byTopic.get(key) ?? []), row]);
+    iByTopic.set(key, [...(iByTopic.get(key) ?? []), row]);
   }
-  const topics = [...byTopic.entries()].sort((a, b) => b[1].length - a[1].length);
+  const insightTopics = [...iByTopic.entries()].sort((a, b) => b[1].length - a[1].length);
 
   const rows: DigestRow[] = items.map((item) => {
     let imageCount = 0;
@@ -68,10 +84,138 @@ export default async function InboxPage() {
       status: item.status,
       type: item.type,
       imageCount,
-      questionCount: 0, // 面经题不挂 inbox_item，统计放在下面汇总
+      questionCount: 0,
       insightCount: allInsights.filter((r) => r.insight.inboxItemId === item.id).length,
     };
   });
+
+  const below = (
+    <div className="space-y-10">
+      {/* 题：主题 → 主问题 → 追问 */}
+      <section>
+        <div className="mb-3 flex items-baseline justify-between">
+          <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+            Questions from the wild
+          </p>
+          <p className="font-mono text-meta text-muted-foreground">
+            {mains.length} main · {inboxQuestions.length - mains.length} follow-ups ·{" "}
+            {questionTopics.length} topics
+          </p>
+        </div>
+
+        {questionTopics.length === 0 ? (
+          <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
+            Nothing yet. Digest a signal above.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {questionTopics.map(([topic, qs]) => (
+              <details
+                key={topic}
+                open={qs.length >= 2}
+                className="rounded-lg border border-border bg-surface"
+              >
+                <summary className="flex cursor-pointer items-center gap-3 px-5 py-3.5">
+                  <span className="text-section">{topic}</span>
+                  <span className="ml-auto font-mono text-meta text-muted-foreground">
+                    {qs.length}
+                  </span>
+                </summary>
+                <ul className="space-y-4 border-t border-border px-5 py-4">
+                  {qs.map((q) => {
+                    const kids = followUps.get(q.id) ?? [];
+                    return (
+                      <li key={q.id}>
+                        <p className="text-body">{q.text}</p>
+                        {kids.length > 0 && (
+                          <ul className="mt-2 space-y-1.5 border-l border-border pl-4">
+                            {kids.map((k) => (
+                              <li key={k.id} className="text-meta text-muted-foreground">
+                                ↳ {k.text}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 知识：按主题 */}
+      <section>
+        <div className="mb-3 flex items-baseline justify-between">
+          <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+            What to steal
+          </p>
+          <p className="font-mono text-meta text-muted-foreground">
+            {allInsights.length} in {insightTopics.length} topics
+          </p>
+        </div>
+
+        {insightTopics.length === 0 ? (
+          <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
+            Nothing yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {insightTopics.map(([topic, rows]) => (
+              <details
+                key={topic}
+                open={rows.length >= 3}
+                className="rounded-lg border border-border bg-surface"
+              >
+                <summary className="flex cursor-pointer items-center gap-3 px-5 py-3.5">
+                  <span className="text-section">{topic}</span>
+                  <span className="ml-auto font-mono text-meta text-muted-foreground">
+                    {rows.length}
+                  </span>
+                </summary>
+                <ul className="space-y-4 border-t border-border px-5 py-4">
+                  {rows.map(({ insight: i, sourceTitle, sourceUrl }) => (
+                    <li key={i.id}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-pill px-2.5 py-0.5 text-meta ${KIND_TONE[i.kind]}`}>
+                          {KIND_LABEL[i.kind]}
+                        </span>
+                        {i.company && (
+                          <span className="font-mono text-meta text-muted-foreground">
+                            {i.company}
+                          </span>
+                        )}
+                        {sourceUrl ? (
+                          <a
+                            href={sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="ml-auto max-w-[18rem] truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
+                          >
+                            {sourceTitle || "原文"} ↗
+                          </a>
+                        ) : (
+                          sourceTitle && (
+                            <span className="ml-auto max-w-[18rem] truncate text-meta text-muted-foreground">
+                              {sourceTitle}
+                            </span>
+                          )
+                        )}
+                      </div>
+                      <p className="mt-2 text-body">{i.title}</p>
+                      <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 
   return (
     <WorkShell
@@ -80,15 +224,15 @@ export default async function InboxPage() {
       subtitle="Paste anything useful you run into. Aceit reads it so you don't have to remember it."
       image="/images/work-3.jpg"
       field="inbox"
+      below={below}
     >
       <div className="mb-5 rounded-lg border border-border bg-surface-2 p-5">
         <p className="text-body">
           Found an interview debrief? A teardown of the team you&rsquo;re about to meet? Drop it
-          here — Aceit reads it (<span className="text-foreground">including the text inside
-          screenshots</span>), pulls out{" "}
-          <span className="text-foreground">the questions they asked</span> and{" "}
-          <span className="text-foreground">how the good answers were structured</span>, then files
-          them next to your own material.
+          here — Aceit reads it (
+          <span className="text-foreground">including the text inside screenshots</span>), pulls
+          out <span className="text-foreground">the questions they asked</span> and{" "}
+          <span className="text-foreground">how the good answers were structured</span>.
         </p>
         <p className="mt-3 font-mono text-meta text-muted-foreground">
           ⌘⇧S ON ANY 小红书 NOTE WITH THE EXTENSION
@@ -96,111 +240,6 @@ export default async function InboxPage() {
       </div>
 
       <DigestPanel rows={rows} />
-
-      {/* 消化产出 */}
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <section>
-          <div className="mb-3 flex items-baseline justify-between">
-            <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
-              Questions from the wild
-            </p>
-            <p className="font-mono text-meta text-muted-foreground">
-              {inboxQuestions.length}
-            </p>
-          </div>
-          {inboxQuestions.length === 0 ? (
-            <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
-              Nothing yet. Digest a signal above.
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {inboxQuestions.slice(0, 24).map((q) => (
-                <li
-                  key={q.id}
-                  className="rounded-lg border border-border bg-surface px-4 py-3 text-body"
-                >
-                  {q.text}
-                  {q.clusterId && (
-                    <span className="ml-2 font-mono text-meta text-muted-foreground">
-                      {q.clusterId}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section>
-          <div className="mb-3 flex items-baseline justify-between">
-            <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
-              What to steal
-            </p>
-            <p className="font-mono text-meta text-muted-foreground">
-              {allInsights.length} in {topics.length} topics
-            </p>
-          </div>
-
-          {topics.length === 0 ? (
-            <p className="rounded-lg border border-border bg-surface px-5 py-8 text-center text-meta text-muted-foreground">
-              Nothing yet.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {topics.map(([topic, rows]) => (
-                <details
-                  key={topic}
-                  open={rows.length >= 3}
-                  className="rounded-lg border border-border bg-surface"
-                >
-                  <summary className="flex cursor-pointer items-center gap-3 px-5 py-3.5">
-                    <span className="text-section">{topic}</span>
-                    <span className="ml-auto font-mono text-meta text-muted-foreground">
-                      {rows.length}
-                    </span>
-                  </summary>
-                  <ul className="space-y-4 border-t border-border px-5 py-4">
-                    {rows.map(({ insight: i, sourceTitle, sourceUrl }) => (
-                      <li key={i.id}>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`rounded-pill px-2.5 py-0.5 text-meta ${KIND_TONE[i.kind]}`}
-                          >
-                            {KIND_LABEL[i.kind]}
-                          </span>
-                          {i.company && (
-                            <span className="font-mono text-meta text-muted-foreground">
-                              {i.company}
-                            </span>
-                          )}
-                          {sourceUrl ? (
-                            <a
-                              href={sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="ml-auto max-w-[14rem] truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
-                            >
-                              {sourceTitle || "原文"} ↗
-                            </a>
-                          ) : (
-                            sourceTitle && (
-                              <span className="ml-auto max-w-[14rem] truncate text-meta text-muted-foreground">
-                                {sourceTitle}
-                              </span>
-                            )
-                          )}
-                        </div>
-                        <p className="mt-2 text-body">{i.title}</p>
-                        <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
     </WorkShell>
   );
 }

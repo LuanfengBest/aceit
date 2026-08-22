@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { insights, questions } from "@/lib/db/schema";
-import { consolidateInsights, findDuplicateQuestions } from "@/lib/consolidate-insights";
+import {
+  assignQuestionTopics,
+  consolidateInsights,
+  findDuplicateQuestions,
+  mergeTopics,
+} from "@/lib/consolidate-insights";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -62,10 +67,70 @@ export async function POST() {
         .run();
     }
 
+    // 主题攒多了就压一轮，避免越消化越碎
+    const afterAssign = [
+      ...new Set(
+        db
+          .select({ topic: insights.topic })
+          .from(insights)
+          .where(isNull(insights.mergedInto))
+          .all()
+          .map((r) => r.topic)
+          .filter((t): t is string => !!t)
+      ),
+    ];
+    const cap = Math.max(4, Math.min(8, Math.ceil(live.length / 4)));
+    const remap = await mergeTopics(afterAssign, cap);
+    for (const [from, to] of remap) {
+      db.update(insights).set({ topic: to }).where(eq(insights.topic, from)).run();
+      db.update(questions).set({ topic: to }).where(eq(questions.topic, from)).run();
+    }
+
+    // 题也归主题，复用刚才 insights 定下来的主题名
+    const topicsAfter = [
+      ...new Set(
+        db
+          .select({ topic: insights.topic })
+          .from(insights)
+          .where(isNull(insights.mergedInto))
+          .all()
+          .map((r) => r.topic)
+          .filter((t): t is string => !!t)
+      ),
+    ];
+    const merged = new Set(dupes.map((d) => d.id));
+
+    // 只给主问题分主题：追问必须跟父级同组，否则渲染时会跟主问题拆散
+    const allInbox = db
+      .select({ id: questions.id, text: questions.text, parentId: questions.parentId })
+      .from(questions)
+      .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
+      .all();
+
+    const mains = allInbox.filter((q) => q.parentId === null && !merged.has(q.id));
+    const qTopics = await assignQuestionTopics(
+      mains.map((q) => ({ id: q.id, text: q.text })),
+      topicsAfter
+    );
+
+    const topicById = new Map(qTopics.map((a) => [a.id, a.topic]));
+    for (const a of qTopics) {
+      db.update(questions).set({ topic: a.topic }).where(eq(questions.id, a.id)).run();
+    }
+    // 追问继承父级主题
+    for (const q of allInbox) {
+      if (q.parentId === null) continue;
+      const inherited = topicById.get(q.parentId);
+      if (inherited) {
+        db.update(questions).set({ topic: inherited }).where(eq(questions.id, q.id)).run();
+      }
+    }
+
     return NextResponse.json({
       insights: live.length,
       merged: mergedCount,
       topics: topicCount,
+      topicsMerged: remap.size,
       questionsBefore: inboxQs.length,
       questionsMerged: dupes.length,
     });

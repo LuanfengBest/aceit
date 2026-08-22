@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { callLLMObject, type LLMImage } from "@/lib/llm";
 import type { NewInsight, NewQuestion } from "@/lib/db/schema";
 
@@ -15,6 +16,9 @@ const SYSTEM = `你在消化一条外部素材（多半是小红书的面经、�
 - 只要真实被问过的题，不要自己编，也不要把"我觉得可以准备一下xx"当成题。
 - kind 分类：behavioral / technical / case / resume / other
 - cluster 用英文小写下划线给同类问题起个名，如 agent_intent_recognition
+- **追问要挂到主问题上**：面经里常见"讲讲这个项目"→"你具体做了什么"→"指标是什么"
+  这样的链条。后面那些是追问，把 follows 填成主问题在你输出数组里的下标（从 0 开始）。
+  本身就是主问题的填 null。追问的 text 里不要再写"（追问）"前缀，层级已经体现了。
 
 二、参考知识（insights）
 - approach：**回答思路和结构**。别人怎么答的、什么结构拿到了好评、面试官在追问什么方向。这是最有价值的一类，尽量抽全。
@@ -42,8 +46,12 @@ const SCHEMA = {
             enum: ["behavioral", "technical", "case", "resume", "other"],
           },
           cluster: { type: "string" },
+          follows: {
+            type: ["integer", "null"],
+            description: "这是对哪道题的追问，填那道题在本数组里的下标；主问题填 null",
+          },
         },
-        required: ["text", "kind", "cluster"],
+        required: ["text", "kind", "cluster", "follows"],
         additionalProperties: false,
       },
     },
@@ -71,7 +79,8 @@ const SCHEMA = {
 
 export interface DigestResult {
   company: string;
-  questions: Omit<NewQuestion, "roleId">[];
+  /** follows 保留下标，落库时再翻译成 parentId */
+  questions: (Omit<NewQuestion, "roleId"> & { follows: number | null })[];
   insights: Omit<NewInsight, "inboxItemId">[];
 }
 
@@ -99,20 +108,43 @@ async function loadImages(urls: string[]): Promise<LLMImage[]> {
   return loaded.filter((x): x is LLMImage => x !== null);
 }
 
+/** 视频帧存在本地，直接读文件 */
+async function loadFrames(paths: string[]): Promise<LLMImage[]> {
+  const loaded: (LLMImage | null)[] = await Promise.all(
+    paths.slice(0, MAX_IMAGES).map(async (file): Promise<LLMImage | null> => {
+      try {
+        const buf = await readFile(file);
+        return { data: buf.toString("base64"), mediaType: "image/jpeg" };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return loaded.filter((x): x is LLMImage => x !== null);
+}
+
 export async function digestInboxItem(item: {
   title: string | null;
   desc: string | null;
   author: string | null;
   images: string[];
+  frames?: string[];
+  isVideo?: boolean;
 }): Promise<DigestResult & { imagesRead: number }> {
-  const images = await loadImages(item.images);
+  // 视频笔记优先用采集时抽的帧；图文笔记用原图
+  const images =
+    item.frames && item.frames.length > 0
+      ? await loadFrames(item.frames)
+      : await loadImages(item.images);
 
   const text = [
     item.title ? `标题：${item.title}` : "",
     item.author ? `作者：${item.author}` : "",
     item.desc ? `正文：${item.desc}` : "",
     images.length > 0
-      ? `\n（另附 ${images.length} 张图，干货可能主要在图里，仔细读）`
+      ? item.isVideo
+        ? `\n（另附 ${images.length} 张视频截帧，字幕和画面里的文字要仔细读）`
+        : `\n（另附 ${images.length} 张图，干货可能主要在图里，仔细读）`
       : "",
   ]
     .filter(Boolean)
@@ -120,7 +152,7 @@ export async function digestInboxItem(item: {
 
   const { object } = await callLLMObject<{
     company: string;
-    questions: { text: string; kind: string; cluster: string }[];
+    questions: { text: string; kind: string; cluster: string; follows: number | null }[];
     insights: { kind: string; title: string; content: string; tags: string[] }[];
   }>(
     // 有图走视觉任务，没图走普通抽取
@@ -138,7 +170,11 @@ export async function digestInboxItem(item: {
     company,
     imagesRead: images.length,
     questions: (object.questions ?? [])
-      .map((q) => ({
+      .map((q, index) => ({
+        follows:
+          typeof q.follows === "number" && q.follows >= 0 && q.follows < index
+            ? q.follows
+            : null,
         text: (q.text ?? "").trim(),
         kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
           ? q.kind

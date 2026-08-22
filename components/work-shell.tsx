@@ -22,6 +22,7 @@ export function WorkShell({
   meta,
   image,
   field,
+  below,
   children,
 }: {
   title: string;
@@ -29,6 +30,8 @@ export function WorkShell({
   meta?: string;
   image: string;
   field: FieldKey;
+  /** 放在左图右内容区域下方、占满整幅宽度的内容 */
+  below?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const f = FIELDS[field];
@@ -86,6 +89,11 @@ export function WorkShell({
           {children}
         </main>
       </div>
+
+      {/* 全宽区：不受左侧图片列挤压，可读性优先 */}
+      {below && (
+        <div className="mx-auto w-full max-w-[1400px] px-6 pb-14 sm:px-10">{below}</div>
+      )}
     </div>
   );
 }
