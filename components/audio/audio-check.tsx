@@ -19,6 +19,7 @@ export function AudioCheck() {
   const [micTrack, setMicTrack] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [url, setUrl] = useState<string | null>(null);
+  const [diag, setDiag] = useState<string[]>([]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -27,19 +28,45 @@ export function AudioCheck() {
     setUrl(null);
     try {
       // 标签页音频：Chrome 会弹共享选择框，要勾上「分享标签页音频」
+      // displaySurface:"browser" 让 Chrome 的选择器直接打开在「标签页」那一栏，
+      // 不用自己去点；selfBrowserSurface:"exclude" 把当前这个页面从列表里去掉，
+      // 免得又选到 aceit 自己
       const display = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+        video: { displaySurface: "browser" },
+        audio: { suppressLocalAudioPlayback: false },
+        selfBrowserSurface: "exclude",
+        systemAudio: "include",
+      } as DisplayMediaStreamOptions);
       const displayAudio = display.getAudioTracks()[0] ?? null;
       setTabTrack(displayAudio ? displayAudio.label || "(未命名)" : null);
+
+      const notes: string[] = [];
+      notes.push(
+        `共享流：视频轨 ${display.getVideoTracks().length} 条，音频轨 ${display.getAudioTracks().length} 条`
+      );
+      const videoLabel = display.getVideoTracks()[0]?.label ?? "";
+      if (videoLabel) notes.push(`共享对象：${videoLabel}`);
+      if (!displayAudio) {
+        notes.push(
+          "没拿到音频轨 —— 多半是选了「整个屏幕」或「窗口」。macOS 上只有选「Chrome 标签页」并勾选「同时分享标签页音频」才会给音频轨。"
+        );
+      } else {
+        const st = displayAudio.getSettings();
+        notes.push(
+          `音频轨状态：${displayAudio.readyState} · enabled=${displayAudio.enabled} · muted=${displayAudio.muted} · 采样率 ${st.sampleRate ?? "?"}`
+        );
+      }
 
       // 麦克风
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
       const micAudio = mic.getAudioTracks()[0] ?? null;
       setMicTrack(micAudio ? micAudio.label || "(未命名)" : null);
+      notes.push(`麦克风：${micAudio?.label || "(无)"} · ${micAudio?.readyState ?? "-"}`);
+      setDiag(notes);
 
       const ctx = new AudioContext();
+      // getDisplayMedia 的 await 之后用户手势可能已失效，AudioContext 会停在 suspended
+      if (ctx.state === "suspended") await ctx.resume();
       const dest = ctx.createMediaStreamDestination();
 
       const meter = (stream: MediaStream, set: (v: number) => void) => {
@@ -105,14 +132,24 @@ export function AudioCheck() {
 
   return (
     <div className="rounded-lg border border-border bg-surface p-6">
-      <ol className="mb-6 space-y-1 text-meta text-muted-foreground">
+      <ol className="mb-4 space-y-1 text-meta text-muted-foreground">
         <li>1. 随便开一个正在放声音的标签页（B 站、YouTube 都行）</li>
-        <li>2. 点下面的按钮，在弹出的框里选那个标签页</li>
+        <li>2. 点下面的按钮 → macOS 先问屏幕权限，点 Allow to Share Screen</li>
         <li>
-          3. <span className="text-foreground">务必勾上「分享标签页音频」</span> —— 不勾就采不到
+          3. 接着 Chrome 弹出选择器 → 选顶部的
+          <span className="text-foreground">「Chrome 标签页」</span>，挑那个标签页
         </li>
-        <li>4. 对着麦克风说两句话，看两条音量条是不是都在动</li>
+        <li>
+          4. <span className="text-foreground">左下角勾上「同时分享标签页音频」</span> —— 不勾就采不到
+        </li>
+        <li>5. 对着麦克风说两句话，看两条音量条是不是都在动</li>
       </ol>
+
+      <p className="mb-6 rounded-md border border-border bg-surface-2 px-4 py-3 text-meta text-muted-foreground">
+        为什么要过屏幕共享：浏览器没有单独的「只采音频」权限，标签页声音只能搭着
+        标签页画面一起拿。<span className="text-foreground">画面一帧都不会被使用</span>——
+        录音接的是混流后的纯音频轨，视频轨拿到就扔着，既不渲染也不写盘。
+      </p>
 
       {phase === "idle" && (
         <button
@@ -162,6 +199,21 @@ export function AudioCheck() {
           >
             再测一次
           </button>
+        </div>
+      )}
+
+      {diag.length > 0 && (
+        <div className="mt-6 rounded-md border border-border bg-bg p-4">
+          <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+            诊断
+          </p>
+          <ul className="mt-2 space-y-1">
+            {diag.map((d, i) => (
+              <li key={i} className="text-meta text-muted-foreground">
+                {d}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
