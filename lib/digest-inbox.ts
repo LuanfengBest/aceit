@@ -2,12 +2,17 @@ import { readFile } from "node:fs/promises";
 import { callLLMObject, type LLMImage } from "@/lib/llm";
 import type { NewInsight, NewQuestion } from "@/lib/db/schema";
 
-/** 一条笔记最多读几张图。小红书面经常把干货做成长图，但也别一次烧太多 */
-const MAX_IMAGES = 6;
+/**
+ * 一条笔记最多读几张图。
+ * 小红书面经常把干货切成多张长图，读不全就会漏掉后半截的题和答法——
+ * 之前设 6 张，一条 9 图的笔记里"评测集怎么设计"那段整个丢了。
+ */
+const MAX_IMAGES = 14;
 
 const SYSTEM = `你在消化一条外部素材（多半是小红书的面经、行业分享、公司情报）。
 
 **重要：干货经常整个写在图片里**，正文可能只有一句话。图片一定要仔细读，把里面的文字内容都提取出来。
+**每一张图都要读完**，面经常把内容切成多张长图，后面几张里往往还有题和答法。
 
 产出两类东西：
 
@@ -25,6 +30,10 @@ const SYSTEM = `你在消化一条外部素材（多半是小红书的面经、�
   **每条 approach 都要用 answers 指明它回答的是上面 questions 数组里的哪一道题（填下标）。**
   一条悬空的答法对使用者没用——他会看到一段"背景→目标→行动→成果"却不知道什么场景下该这么答。
   实在对应不到具体某道题的通用方法论，才填 null。
+
+  **凡是素材里给了答法的题，都必须配一条 approach，一条都不能漏。**
+  抽完之后自己核对一遍：questions 数组里每一道题，如果素材里写了怎么答，
+  是不是都有对应的 approach 指向它？漏掉的补上。
 
   **一道题最多给一条 approach。** 把完整答法写进这一条的 content 里：
   如果面经里这道题的答法是"背景 X → 目标 Y → 行动 Z → 成果 W"，
@@ -190,28 +199,41 @@ export async function digestInboxItem(item: {
   const IKINDS = ["approach", "company", "term", "pitfall"] as const;
   const company = (object.company ?? "").trim();
 
+  // 模型给的 follows / answers 是**原始数组**的下标。
+  // 下面要过滤掉空条目，过滤后下标会整体偏移，
+  // 所以先记住原始位置，再翻译成过滤后的位置——不然题和答法会错位一格。
+  const rawQuestions = (object.questions ?? []).map((q, originalIndex) => ({
+    originalIndex,
+    text: (q.text ?? "").trim(),
+    kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
+      ? q.kind
+      : "other") as (typeof KINDS)[number],
+    clusterId: (q.cluster ?? "").trim() || null,
+    rationale: company ? `来自面经：${company}` : "来自外部面经",
+    source: "inbox" as const,
+    rawFollows:
+      typeof q.follows === "number" && q.follows >= 0 && q.follows < originalIndex
+        ? q.follows
+        : null,
+  }));
+
+  const kept = rawQuestions.filter((q) => q.text);
+  const originalToKept = new Map<number, number>();
+  kept.forEach((q, keptIndex) => originalToKept.set(q.originalIndex, keptIndex));
+
   return {
     company,
     imagesRead: images.length,
-    questions: (object.questions ?? [])
-      .map((q, index) => ({
-        follows:
-          typeof q.follows === "number" && q.follows >= 0 && q.follows < index
-            ? q.follows
-            : null,
-        text: (q.text ?? "").trim(),
-        kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
-          ? q.kind
-          : "other") as (typeof KINDS)[number],
-        clusterId: (q.cluster ?? "").trim() || null,
-        rationale: company ? `来自面经：${company}` : "来自外部面经",
-        source: "inbox" as const,
-      }))
-      .filter((q) => q.text),
+    questions: kept.map(({ originalIndex: _o, rawFollows, ...row }) => ({
+      ...row,
+      follows: rawFollows !== null ? (originalToKept.get(rawFollows) ?? null) : null,
+    })),
     insights: (object.insights ?? [])
       .map((i) => ({
         answers:
-          typeof i.answers === "number" && i.answers >= 0 ? i.answers : null,
+          typeof i.answers === "number" && i.answers >= 0
+            ? (originalToKept.get(i.answers) ?? null)
+            : null,
         kind: (IKINDS.includes(i.kind as (typeof IKINDS)[number])
           ? i.kind
           : "approach") as (typeof IKINDS)[number],

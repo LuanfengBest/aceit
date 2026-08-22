@@ -24,34 +24,38 @@ const KIND_TONE: Record<string, string> = {
 function QuestionAnswers({
   rows,
 }: {
-  rows: { insight: { id: number; title: string; content: string }; sourceUrl: string | null }[];
+  rows: {
+    insight: { id: number; title: string; content: string };
+    sourceUrl: string | null;
+    sourceTitle: string | null;
+  }[];
 }) {
   if (rows.length === 0) return null;
   return (
-    <div className="mt-2 space-y-2">
-      {rows.map(({ insight, sourceUrl }) => (
-        <div
-          key={insight.id}
-          className="rounded-md border border-mint bg-mint/40 px-3.5 py-2.5"
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-meta uppercase tracking-[0.1em] text-mint-ink">
-              How they answered
-            </span>
-            {sourceUrl && (
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="ml-auto text-meta text-muted-foreground underline decoration-border underline-offset-4"
-              >
-                原文 ↗
-              </a>
-            )}
+    <div className="mt-1.5 space-y-1.5">
+      {rows.map(({ insight, sourceUrl, sourceTitle }) => (
+        <details key={insight.id} className="group">
+          <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-pill bg-mint px-2.5 py-0.5 font-mono text-meta uppercase tracking-[0.1em] text-mint-ink transition-opacity hover:opacity-80">
+            <span className="transition-transform group-open:rotate-90">›</span>
+            How they answered
+          </summary>
+          <div className="mt-2 rounded-md border border-mint bg-mint/35 px-3.5 py-2.5">
+            <div className="flex items-baseline gap-2">
+              <p className="text-meta text-foreground">{insight.title}</p>
+              {sourceUrl && (
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto max-w-[16rem] shrink-0 truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
+                >
+                  {sourceTitle || "原文"} ↗
+                </a>
+              )}
+            </div>
+            <p className="mt-1.5 text-meta text-muted-foreground">{insight.content}</p>
           </div>
-          <p className="mt-1 text-meta text-foreground">{insight.title}</p>
-          <p className="mt-1 text-meta text-muted-foreground">{insight.content}</p>
-        </div>
+        </details>
       ))}
     </div>
   );
@@ -128,6 +132,7 @@ export default async function InboxPage() {
     return {
       id: item.id,
       title: item.title || "(no title)",
+      sourceUrl: item.sourceUrl,
       status: item.status,
       type: item.type,
       imageCount,
@@ -159,8 +164,7 @@ export default async function InboxPage() {
             {questionTopics.map(([topic, qs]) => (
               <details
                 key={topic}
-                open={qs.length >= 2}
-                className="rounded-lg border border-border bg-surface"
+                                className="rounded-lg border border-border bg-surface"
               >
                 <summary className="flex cursor-pointer items-center gap-3 px-5 py-3.5">
                   <span className="text-section">{topic}</span>
@@ -222,8 +226,7 @@ export default async function InboxPage() {
             {insightTopics.map(([topic, rows]) => (
               <details
                 key={topic}
-                open={rows.length >= 3}
-                className="rounded-lg border border-border bg-surface"
+                                className="rounded-lg border border-border bg-surface"
               >
                 <summary className="flex cursor-pointer items-center gap-3 px-5 py-3.5">
                   <span className="text-section">{topic}</span>

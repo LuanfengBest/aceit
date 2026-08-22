@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 export interface DigestRow {
   id: number;
   title: string;
+  sourceUrl: string | null;
   status: "pending" | "processed" | "failed";
   type: "normal" | "video";
   imageCount: number;
@@ -141,7 +142,20 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
                 key={row.id}
                 className="h-row border-b border-border transition-colors last:border-b-0 hover:bg-surface-2"
               >
-                <td className="truncate px-5">{row.title}</td>
+                <td className="truncate px-5">
+                  {row.sourceUrl ? (
+                    <a
+                      href={row.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
+                    >
+                      {row.title} ↗
+                    </a>
+                  ) : (
+                    row.title
+                  )}
+                </td>
                 <td className="px-5 text-meta text-muted-foreground">
                   {row.type === "video" ? "Video" : `${row.imageCount} imgs`}
                 </td>
