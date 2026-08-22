@@ -66,8 +66,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
       transcript,
     });
 
-    // 重新消化时先清掉上一轮的产物，避免重复堆积
+    // 重新消化时先清掉这条素材上一轮的产物，避免重复堆积
     db.delete(insights).where(eq(insights.inboxItemId, id)).run();
+    db.delete(questions).where(eq(questions.inboxItemId, id)).run();
 
     // 先插题：知识要挂到题上，得先有题的 id
     const questionIds: number[] = [];
@@ -75,7 +76,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       const { follows: _follows, ...row } = q;
       const created = db
         .insert(questions)
-        .values({ ...row, roleId: null })
+        .values({ ...row, roleId: null, inboxItemId: id })
         .returning({ id: questions.id })
         .get();
       questionIds.push(created.id);

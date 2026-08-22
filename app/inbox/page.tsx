@@ -133,10 +133,11 @@ export default async function InboxPage() {
       id: item.id,
       title: item.title || "(no title)",
       sourceUrl: item.sourceUrl,
+      transcript: item.transcript,
       status: item.status,
       type: item.type,
       imageCount,
-      questionCount: 0,
+      questionCount: inboxQuestions.filter((q) => q.inboxItemId === item.id).length,
       insightCount: allInsights.filter((r) => r.insight.inboxItemId === item.id).length,
     };
   });

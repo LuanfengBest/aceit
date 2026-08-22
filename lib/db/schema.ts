@@ -124,6 +124,10 @@ export const questions = sqliteTable("questions", {
   mergedInto: integer("merged_into"),
   /** 追问挂在主问题下。null 表示这本身就是主问题 */
   parentId: integer("parent_id"),
+  /** 从哪条 inbox 素材消化出来的，用于回溯来源和统计 */
+  inboxItemId: integer("inbox_item_id").references(() => inboxItems.id, {
+    onDelete: "set null",
+  }),
   /** 主题分组，和 insights.topic 共用同一套命名 */
   topic: text("topic"),
   createdAt: integer("created_at", { mode: "timestamp" })

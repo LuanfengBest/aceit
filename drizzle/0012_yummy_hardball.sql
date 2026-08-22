@@ -1,0 +1,1 @@
+ALTER TABLE `questions` ADD `inbox_item_id` integer REFERENCES inbox_items(id);

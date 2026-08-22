@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface DigestRow {
   id: number;
   title: string;
   sourceUrl: string | null;
+  /** 视频转出来的文字，没有就是 null */
+  transcript: string | null;
   status: "pending" | "processed" | "failed";
   type: "normal" | "video";
   imageCount: number;
@@ -28,6 +30,7 @@ const STATUS_LABEL: Record<DigestRow["status"], string> = {
 
 export function DigestPanel({ rows }: { rows: DigestRow[] }) {
   const router = useRouter();
+  const [openRow, setOpenRow] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [queue, setQueue] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -147,8 +150,8 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
           </thead>
           <tbody>
             {rows.map((row) => (
+              <Fragment key={row.id}>
               <tr
-                key={row.id}
                 className="h-row border-b border-border transition-colors last:border-b-0 hover:bg-surface-2"
               >
                 <td className="truncate px-5">
@@ -180,6 +183,15 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
                   {row.insightCount || "—"}
                 </td>
                 <td className="px-5 text-right">
+                  {row.transcript && (
+                    <button
+                      type="button"
+                      onClick={() => setOpenRow(openRow === row.id ? null : row.id)}
+                      className="mr-1 rounded-md px-2 py-1 text-meta text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                    >
+                      {openRow === row.id ? "收起" : "转写"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={busy !== null}
@@ -201,6 +213,19 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
                   </button>
                 </td>
               </tr>
+              {openRow === row.id && row.transcript && (
+                <tr className="border-b border-border bg-surface-2 last:border-b-0">
+                  <td colSpan={6} className="px-5 py-4">
+                    <p className="mb-2 font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+                      Whisper transcript · {row.transcript.length} 字
+                    </p>
+                    <p className="max-h-72 overflow-y-auto whitespace-pre-wrap text-meta text-muted-foreground">
+                      {row.transcript}
+                    </p>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
