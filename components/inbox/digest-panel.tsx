@@ -35,6 +35,21 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
 
   const pending = rows.filter((r) => r.status !== "processed");
 
+  async function consolidate(silent = false) {
+    try {
+      const res = await fetch("/api/inbox/consolidate", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setLog((l) => [
+        `整理：${body.insights} 条通用知识归成 ${body.topics} 个主题，合并 ${body.merged} 条；题去重 ${body.questionsMerged} 条`,
+        ...l,
+      ]);
+      router.refresh();
+    } catch (err) {
+      if (!silent) setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function digest(id: number) {
     setBusy(id);
     setError(null);
@@ -47,8 +62,10 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
         ...l,
       ]);
       router.refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -63,6 +80,10 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
       setQueue((q) => q.filter((x) => x !== id));
     }
     setQueue([]);
+    // 全部消化完再整理一次：归主题需要看到全局，逐条整理没意义
+    setBusy(-1);
+    await consolidate();
+    setBusy(null);
   }
 
   return (
@@ -81,20 +102,8 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
           onClick={async () => {
             setBusy(-1);
             setError(null);
-            try {
-              const res = await fetch("/api/inbox/consolidate", { method: "POST" });
-              const body = await res.json();
-              if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-              setLog((l) => [
-                `整理：${body.insights} 条知识归成 ${body.topics} 个主题，合并 ${body.merged} 条；题去重 ${body.questionsMerged} 条`,
-                ...l,
-              ]);
-              router.refresh();
-            } catch (err) {
-              setError(err instanceof Error ? err.message : String(err));
-            } finally {
-              setBusy(null);
-            }
+            await consolidate();
+            setBusy(null);
           }}
           className="rounded-md border border-border px-3 py-1.5 text-meta text-muted-foreground transition-colors hover:border-accent disabled:opacity-40"
         >
@@ -174,7 +183,14 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
                   <button
                     type="button"
                     disabled={busy !== null}
-                    onClick={() => void digest(row.id)}
+                    onClick={async () => {
+                      const ok = await digest(row.id);
+                      if (ok) {
+                        setBusy(-1);
+                        await consolidate(true);
+                        setBusy(null);
+                      }
+                    }}
                     className="rounded-md px-2 py-1 text-meta text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground disabled:opacity-40"
                   >
                     {busy === row.id
