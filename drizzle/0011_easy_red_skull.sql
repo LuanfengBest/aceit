@@ -1,0 +1,1 @@
+ALTER TABLE `insights` ADD `question_id` integer REFERENCES questions(id);

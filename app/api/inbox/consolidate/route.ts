@@ -14,7 +14,13 @@ export const maxDuration = 300;
 
 /** 把散落的知识条目去重 + 归主题，同时给面经题去重 */
 export async function POST() {
-  const live = db.select().from(insights).where(isNull(insights.mergedInto)).all();
+  // 只整理通用知识。挂在题上的答法各自服务于不同的题，
+  // 内容看着像但不能合并——合并了就把"这条答法对应哪道题"弄丢了
+  const live = db
+    .select()
+    .from(insights)
+    .where(and(isNull(insights.mergedInto), isNull(insights.questionId)))
+    .all();
 
   const existingTopics = [
     ...new Set(live.map((i) => i.topic).filter((t): t is string => !!t)),
@@ -73,7 +79,7 @@ export async function POST() {
         db
           .select({ topic: insights.topic })
           .from(insights)
-          .where(isNull(insights.mergedInto))
+          .where(and(isNull(insights.mergedInto), isNull(insights.questionId)))
           .all()
           .map((r) => r.topic)
           .filter((t): t is string => !!t)
@@ -92,7 +98,7 @@ export async function POST() {
         db
           .select({ topic: insights.topic })
           .from(insights)
-          .where(isNull(insights.mergedInto))
+          .where(and(isNull(insights.mergedInto), isNull(insights.questionId)))
           .all()
           .map((r) => r.topic)
           .filter((t): t is string => !!t)

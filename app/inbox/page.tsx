@@ -20,6 +20,43 @@ const KIND_TONE: Record<string, string> = {
   pitfall: "bg-peach text-peach-ink",
 };
 
+/** 一道题下面挂的答法：别人是怎么答的 */
+function QuestionAnswers({
+  rows,
+}: {
+  rows: { insight: { id: number; title: string; content: string }; sourceUrl: string | null }[];
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-2">
+      {rows.map(({ insight, sourceUrl }) => (
+        <div
+          key={insight.id}
+          className="rounded-md border border-mint bg-mint/40 px-3.5 py-2.5"
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-meta uppercase tracking-[0.1em] text-mint-ink">
+              How they answered
+            </span>
+            {sourceUrl && (
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto text-meta text-muted-foreground underline decoration-border underline-offset-4"
+              >
+                原文 ↗
+              </a>
+            )}
+          </div>
+          <p className="mt-1 text-meta text-foreground">{insight.title}</p>
+          <p className="mt-1 text-meta text-muted-foreground">{insight.content}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default async function InboxPage() {
   const items = db
     .select()
@@ -45,6 +82,15 @@ export default async function InboxPage() {
     .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
     .all();
 
+  // 挂在题上的答法，按题分组
+  const answersByQuestion = new Map<number, typeof allInsights>();
+  for (const row of allInsights) {
+    const qid = row.insight.questionId;
+    if (qid !== null) {
+      answersByQuestion.set(qid, [...(answersByQuestion.get(qid) ?? []), row]);
+    }
+  }
+
   // 追问挂到主问题下
   const followUps = new Map<number, typeof inboxQuestions>();
   for (const q of inboxQuestions) {
@@ -62,9 +108,10 @@ export default async function InboxPage() {
   }
   const questionTopics = [...qByTopic.entries()].sort((a, b) => b[1].length - a[1].length);
 
-  // 知识按主题归组
+  // What to steal 只放没挂到具体题上的通用知识（踩坑、黑话、公司情报）
+  const generalInsights = allInsights.filter((r) => r.insight.questionId === null);
   const iByTopic = new Map<string, typeof allInsights>();
-  for (const row of allInsights) {
+  for (const row of generalInsights) {
     const key = row.insight.topic ?? "未分类";
     iByTopic.set(key, [...(iByTopic.get(key) ?? []), row]);
   }
@@ -127,11 +174,15 @@ export default async function InboxPage() {
                     return (
                       <li key={q.id}>
                         <p className="text-body">{q.text}</p>
+
+                        <QuestionAnswers rows={answersByQuestion.get(q.id) ?? []} />
+
                         {kids.length > 0 && (
-                          <ul className="mt-2 space-y-1.5 border-l border-border pl-4">
+                          <ul className="mt-2.5 space-y-2.5 border-l border-border pl-4">
                             {kids.map((k) => (
-                              <li key={k.id} className="text-meta text-muted-foreground">
-                                ↳ {k.text}
+                              <li key={k.id}>
+                                <p className="text-meta text-muted-foreground">↳ {k.text}</p>
+                                <QuestionAnswers rows={answersByQuestion.get(k.id) ?? []} />
                               </li>
                             ))}
                           </ul>
@@ -149,11 +200,16 @@ export default async function InboxPage() {
       {/* 知识：按主题 */}
       <section>
         <div className="mb-3 flex items-baseline justify-between">
-          <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
-            What to steal
-          </p>
+          <div>
+            <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+              General playbook
+            </p>
+            <p className="mt-0.5 text-meta text-muted-foreground">
+              Pitfalls and terminology that aren&rsquo;t tied to one question
+            </p>
+          </div>
           <p className="font-mono text-meta text-muted-foreground">
-            {allInsights.length} in {insightTopics.length} topics
+            {generalInsights.length} in {insightTopics.length} topics
           </p>
         </div>
 

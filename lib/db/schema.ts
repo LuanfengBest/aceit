@@ -205,6 +205,14 @@ export const insights = sqliteTable("insights", {
   company: text("company"),
   /** 主题分组。同一主题的多条会归并到一起展示，避免几百条平铺 */
   topic: text("topic"),
+  /**
+   * 这条答法回答的是哪道题。
+   * approach 类必须尽量挂上，否则用户看到一条悬空的答法，
+   * 不知道什么场景下该想到它。pitfall/company/term 这类通用的可以为空。
+   */
+  questionId: integer("question_id").references(() => questions.id, {
+    onDelete: "set null",
+  }),
   /** 被归并掉的指向留存的那条；非 null 表示这条是重复项，不展示 */
   mergedInto: integer("merged_into"),
   /** 能力标签，和 experiences.tags 对齐，JSON 数组 */

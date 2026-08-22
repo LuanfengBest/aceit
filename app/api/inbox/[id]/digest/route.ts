@@ -69,32 +69,40 @@ export async function POST(_req: NextRequest, { params }: Params) {
     // 重新消化时先清掉上一轮的产物，避免重复堆积
     db.delete(insights).where(eq(insights.inboxItemId, id)).run();
 
+    // 先插题：知识要挂到题上，得先有题的 id
+    const questionIds: number[] = [];
+    for (const q of result.questions) {
+      const { follows: _follows, ...row } = q;
+      const created = db
+        .insert(questions)
+        .values({ ...row, roleId: null })
+        .returning({ id: questions.id })
+        .get();
+      questionIds.push(created.id);
+    }
+    result.questions.forEach((q, i) => {
+      if (q.follows !== null && questionIds[q.follows] !== undefined) {
+        db.update(questions)
+          .set({ parentId: questionIds[q.follows] })
+          .where(eq(questions.id, questionIds[i]))
+          .run();
+      }
+    });
+
     if (result.insights.length > 0) {
       db.insert(insights)
-        .values(result.insights.map((i) => ({ ...i, inboxItemId: id })))
+        .values(
+          result.insights.map(({ answers, ...row }) => ({
+            ...row,
+            inboxItemId: id,
+            // 下标翻译成真实的 question id
+            questionId:
+              answers !== null && questionIds[answers] !== undefined
+                ? questionIds[answers]
+                : null,
+          }))
+        )
         .run();
-    }
-    if (result.questions.length > 0) {
-      // 面经题进问题池，不挂岗位（roleId = null）。
-      // 先按顺序插入拿到 id，再把追问的 parentId 补上。
-      const ids: number[] = [];
-      for (const q of result.questions) {
-        const { follows: _follows, ...row } = q;
-        const created = db
-          .insert(questions)
-          .values({ ...row, roleId: null })
-          .returning({ id: questions.id })
-          .get();
-        ids.push(created.id);
-      }
-      result.questions.forEach((q, i) => {
-        if (q.follows !== null && ids[q.follows] !== undefined) {
-          db.update(questions)
-            .set({ parentId: ids[q.follows] })
-            .where(eq(questions.id, ids[i]))
-            .run();
-        }
-      });
     }
 
     db.update(inboxItems)
@@ -109,6 +117,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       transcriptChars: transcript?.length ?? 0,
       questions: result.questions.length,
       insights: result.insights.length,
+      linked: result.insights.filter((i) => i.answers !== null).length,
     });
   } catch (err) {
     db.update(inboxItems).set({ status: "failed" }).where(eq(inboxItems.id, id)).run();

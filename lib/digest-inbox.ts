@@ -22,6 +22,15 @@ const SYSTEM = `你在消化一条外部素材（多半是小红书的面经、�
 
 二、参考知识（insights）
 - approach：**回答思路和结构**。别人怎么答的、什么结构拿到了好评、面试官在追问什么方向。这是最有价值的一类，尽量抽全。
+  **每条 approach 都要用 answers 指明它回答的是上面 questions 数组里的哪一道题（填下标）。**
+  一条悬空的答法对使用者没用——他会看到一段"背景→目标→行动→成果"却不知道什么场景下该这么答。
+  实在对应不到具体某道题的通用方法论，才填 null。
+
+  **一道题最多给一条 approach。** 把完整答法写进这一条的 content 里：
+  如果面经里这道题的答法是"背景 X → 目标 Y → 行动 Z → 成果 W"，
+  那就是**一条** approach，content 里把四段都写全，
+  **不要拆成"项目背景""项目目标""项目行动""项目成果"四条**——
+  拆开之后使用者看到的是四个碎片，拼不回一个能讲出来的答案。
 - company：这家公司/这个岗位的具体情况。面试流程几轮、考什么、什么风格、什么标准。
 - term：行业黑话、评价标准、岗位术语的具体含义。
 - pitfall：踩坑记录。什么答法翻车了、什么雷区不能碰。
@@ -67,8 +76,13 @@ const SCHEMA = {
           title: { type: "string", description: "一句话标题" },
           content: { type: "string", description: "具体内容，讲清楚可操作的部分" },
           tags: { type: "array", items: { type: "string" } },
+          answers: {
+            type: ["integer", "null"],
+            description:
+              "这条知识回答的是 questions 数组里的第几道题（下标）；通用的填 null",
+          },
         },
-        required: ["kind", "title", "content", "tags"],
+        required: ["kind", "title", "content", "tags", "answers"],
         additionalProperties: false,
       },
     },
@@ -79,9 +93,9 @@ const SCHEMA = {
 
 export interface DigestResult {
   company: string;
-  /** follows 保留下标，落库时再翻译成 parentId */
+  /** follows / answers 保留下标，落库时再翻译成 id */
   questions: (Omit<NewQuestion, "roleId"> & { follows: number | null })[];
-  insights: Omit<NewInsight, "inboxItemId">[];
+  insights: (Omit<NewInsight, "inboxItemId"> & { answers: number | null })[];
 }
 
 /** 把图片下下来转 base64。失败的跳过，不要因为一张图挂掉整条 */
@@ -157,7 +171,13 @@ export async function digestInboxItem(item: {
   const { object } = await callLLMObject<{
     company: string;
     questions: { text: string; kind: string; cluster: string; follows: number | null }[];
-    insights: { kind: string; title: string; content: string; tags: string[] }[];
+    insights: {
+      kind: string;
+      title: string;
+      content: string;
+      tags: string[];
+      answers: number | null;
+    }[];
   }>(
     // 有图走视觉任务，没图走普通抽取
     images.length > 0 ? "extract_image" : "extract",
@@ -190,6 +210,8 @@ export async function digestInboxItem(item: {
       .filter((q) => q.text),
     insights: (object.insights ?? [])
       .map((i) => ({
+        answers:
+          typeof i.answers === "number" && i.answers >= 0 ? i.answers : null,
         kind: (IKINDS.includes(i.kind as (typeof IKINDS)[number])
           ? i.kind
           : "approach") as (typeof IKINDS)[number],
