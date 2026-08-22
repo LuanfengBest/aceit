@@ -221,6 +221,15 @@ export const insights = sqliteTable("insights", {
   mergedInto: integer("merged_into"),
   /** 能力标签，和 experiences.tags 对齐，JSON 数组 */
   tags: text("tags").notNull().default("[]"),
+  /**
+   * 出处原文。digest 只做提取整合、不做补充，所以每条都得指得出来源：
+   * text 类存程序按行号截出来的原文，image 类存"图 N"。
+   * 之前没有这个字段，模型在一条只有题目没有答案的清单上
+   * 自己写出了 24 条"别人的答法"，看起来像情报其实是通用知识。
+   */
+  evidence: text("evidence"),
+  /** 出处类型：text（正文/转写）或 image（图片/视频帧） */
+  evidenceKind: text("evidence_kind", { enum: ["text", "image"] }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

@@ -25,7 +25,13 @@ function QuestionAnswers({
   rows,
 }: {
   rows: {
-    insight: { id: number; title: string; content: string };
+    insight: {
+      id: number;
+      title: string;
+      content: string;
+      evidence: string | null;
+      evidenceKind: string | null;
+    };
     sourceUrl: string | null;
     sourceTitle: string | null;
   }[];
@@ -54,6 +60,16 @@ function QuestionAnswers({
               )}
             </div>
             <p className="mt-1.5 text-meta text-muted-foreground">{insight.content}</p>
+            {insight.evidence && (
+              <div className="mt-2.5 border-t border-mint pt-2">
+                <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-mint-ink">
+                  {insight.evidenceKind === "image" ? "From image" : "From text"}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
+                  {insight.evidence}
+                </p>
+              </div>
+            )}
           </div>
         </details>
       ))}
@@ -266,6 +282,16 @@ export default async function InboxPage() {
                       </div>
                       <p className="mt-2 text-body">{i.title}</p>
                       <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
+                      {i.evidence && (
+                        <details className="mt-1.5">
+                          <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:text-accent">
+                            {i.evidenceKind === "image" ? "From image" : "From text"}
+                          </summary>
+                          <p className="mt-1 whitespace-pre-wrap border-l-2 border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
+                            {i.evidence}
+                          </p>
+                        </details>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -62,7 +62,10 @@
 
   // 视频直链藏在 note 的多层结构里，直接对 JSON 文本做正则最省事。优先 mp4。
   function pickVideoUrl(noteJson) {
-    const matches = noteJson.match(/https?:[^"]*?\.(mp4|m3u8)[^"]*/g);
+    // 排除反斜杠：有的笔记里视频信息是二次编码的 JSON，
+    // 结束引号在文本里长这样 \" ，只挡 " 的话会把那个反斜杠一起吃进 URL 末尾，
+    // 拿到的链接就永远 403。空白同理。
+    const matches = noteJson.match(/https?:\/\/[^"\\\s]*?\.(mp4|m3u8)[^"\\\s]*/g);
     if (!matches || matches.length === 0) return null;
     return matches.find((u) => u.includes(".mp4")) || matches[0];
   }
