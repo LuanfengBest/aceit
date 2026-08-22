@@ -89,3 +89,80 @@ export const roleProfiles = sqliteTable("role_profiles", {
 
 export type RoleProfile = typeof roleProfiles.$inferSelect;
 export type NewRoleProfile = typeof roleProfiles.$inferInsert;
+
+// ---- 模块 C：问答打磨 ----
+
+/** 一道面试题。cluster_id 用于把措辞不同但本质相同的问题归到一起 */
+export const questions = sqliteTable("questions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  roleId: integer("role_id").references(() => roleProfiles.id, {
+    onDelete: "set null",
+  }),
+  text: text("text").notNull(),
+  kind: text("kind", {
+    enum: ["behavioral", "technical", "case", "resume", "other"],
+  })
+    .notNull()
+    .default("other"),
+  /** 这题为什么会被问：对应岗位的哪条要求 / 你简历里的哪个点 */
+  rationale: text("rationale"),
+  /** 相似问题归为同一簇，簇内共享打磨成果 */
+  clusterId: text("cluster_id"),
+  source: text("source", { enum: ["role", "material", "inbox", "manual"] })
+    .notNull()
+    .default("role"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/** 答案版本链：每次打磨插新行，parent_id 指向上一版，永不覆盖 */
+export const answers = sqliteTable("answers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  questionId: integer("question_id")
+    .notNull()
+    .references(() => questions.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  version: integer("version").notNull().default(1),
+  parentId: integer("parent_id"),
+  /** 这一版是怎么来的：initial / 打磨指令原文 */
+  note: text("note"),
+  /** 这版答案调用了哪几条经历，JSON 数组存 experiences.id */
+  usedExperienceIds: text("used_experience_ids").notNull().default("[]"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// ---- 模块 D：面试复盘 ----
+
+/** 真实面试里被问到的一题。question_id 外键回问题库，这是数据闭环 */
+export const interviewQas = sqliteTable("interview_qas", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** 匹配到问题库里的哪一题；没匹配上就是 null（= 没准备过的题） */
+  questionId: integer("question_id").references(() => questions.id, {
+    onDelete: "set null",
+  }),
+  roleId: integer("role_id").references(() => roleProfiles.id, {
+    onDelete: "set null",
+  }),
+  company: text("company"),
+  round: text("round"),
+  /** 面试官实际问法 */
+  askedText: text("asked_text").notNull(),
+  /** 我当时怎么答的 */
+  myAnswer: text("my_answer"),
+  /** 复盘：哪里没答好 */
+  reflection: text("reflection"),
+  interviewedAt: text("interviewed_at"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type Question = typeof questions.$inferSelect;
+export type NewQuestion = typeof questions.$inferInsert;
+export type Answer = typeof answers.$inferSelect;
+export type NewAnswer = typeof answers.$inferInsert;
+export type InterviewQa = typeof interviewQas.$inferSelect;
+export type NewInterviewQa = typeof interviewQas.$inferInsert;

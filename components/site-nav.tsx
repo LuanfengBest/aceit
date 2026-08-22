@@ -8,6 +8,8 @@ const LINKS = [
   { href: "/inbox", label: "Inbox" },
   { href: "/profile", label: "Material" },
   { href: "/roles", label: "Roles" },
+  { href: "/studio", label: "Studio" },
+  { href: "/debrief", label: "Debrief" },
 ];
 
 export function SiteNav() {
