@@ -71,6 +71,13 @@
       "when": 1787436361549,
       "tag": "0009_complex_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787437035185,
+      "tag": "0010_dear_zombie",
+      "breakpoints": true
     }
   ]
 }

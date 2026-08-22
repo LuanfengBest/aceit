@@ -130,6 +130,7 @@ export async function digestInboxItem(item: {
   images: string[];
   frames?: string[];
   isVideo?: boolean;
+  transcript?: string | null;
 }): Promise<DigestResult & { imagesRead: number }> {
   // 视频笔记优先用采集时抽的帧；图文笔记用原图
   const images =
@@ -141,6 +142,9 @@ export async function digestInboxItem(item: {
     item.title ? `标题：${item.title}` : "",
     item.author ? `作者：${item.author}` : "",
     item.desc ? `正文：${item.desc}` : "",
+    item.transcript
+      ? `\n口播转写（这是视频里说的话，干货主要在这里）：\n${item.transcript}`
+      : "",
     images.length > 0
       ? item.isVideo
         ? `\n（另附 ${images.length} 张视频截帧，字幕和画面里的文字要仔细读）`

@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { inboxItems } from "@/lib/db/schema";
@@ -54,27 +52,6 @@ export async function POST(req: NextRequest) {
     raw: JSON.stringify(body),
   };
 
-  // 视频帧：扩展在采集当下抽好的 data URL，落到本地文件，DB 里只存路径
-  async function saveFrames(itemId: number): Promise<string> {
-    const raw = body.frames;
-    if (!Array.isArray(raw) || raw.length === 0) return "[]";
-
-    const dir = path.join(process.cwd(), "data", "frames", String(itemId));
-    await mkdir(dir, { recursive: true });
-
-    const saved: string[] = [];
-    for (let i = 0; i < Math.min(raw.length, 8); i++) {
-      const entry = raw[i];
-      if (typeof entry !== "string") continue;
-      const match = /^data:image\/(\w+);base64,(.+)$/.exec(entry);
-      if (!match) continue;
-      const file = path.join(dir, `${i}.${match[1] === "jpeg" ? "jpg" : match[1]}`);
-      await writeFile(file, Buffer.from(match[2], "base64"));
-      saved.push(file);
-    }
-    return JSON.stringify(saved);
-  }
-
   const existing = db
     .select({ id: inboxItems.id })
     .from(inboxItems)
@@ -82,22 +59,13 @@ export async function POST(req: NextRequest) {
     .get();
 
   if (existing) {
-    const frames = await saveFrames(existing.id);
     db.update(inboxItems)
-      .set({ ...values, frames })
+      .set(values)
       .where(eq(inboxItems.sourceId, sourceId))
       .run();
-    return jsonWithCors({ status: "updated", id: existing.id, frames: JSON.parse(frames).length });
+    return jsonWithCors({ status: "updated", id: existing.id });
   }
 
   const result = db.insert(inboxItems).values(values).run();
-  const id = Number(result.lastInsertRowid);
-  const frames = await saveFrames(id);
-  if (frames !== "[]") {
-    db.update(inboxItems).set({ frames }).where(eq(inboxItems.id, id)).run();
-  }
-  return jsonWithCors(
-    { status: "created", id, frames: JSON.parse(frames).length },
-    201
-  );
+  return jsonWithCors({ status: "created", id: Number(result.lastInsertRowid) }, 201);
 }

@@ -21,6 +21,10 @@ export const inboxItems = sqliteTable("inbox_items", {
    * 小红书视频直链带签名会过期，事后再去拉是 403，只能采集时就抓。
    */
   frames: text("frames").notNull().default("[]"),
+  /** 采集当下存下来的视频文件路径 */
+  mediaPath: text("media_path"),
+  /** 视频转出来的文字 */
+  transcript: text("transcript"),
   raw: text("raw").notNull(),
   status: text("status", { enum: ["pending", "processed", "failed"] })
     .notNull()

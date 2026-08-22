@@ -3,6 +3,7 @@
   const REQUEST = "ACEIT_XHS_REQUEST";
   const RESPONSE = "ACEIT_XHS_RESPONSE";
   const ENDPOINT = "http://localhost:3000/api/inbox";
+  const MEDIA_ENDPOINT = "http://localhost:3000/api/inbox";
   const TIMEOUT_MS = 3000;
 
   let seq = 0;
@@ -41,58 +42,21 @@
   }
 
   /**
-   * 视频笔记：采集当下就抽几帧。
-   * 小红书视频直链带签名会过期，事后服务端再去拉是 403，所以必须在这里抓。
-   * 先把视频 fetch 成 blob（页面上下文带着正确的 Referer 和 cookie），
-   * 再用 blob URL 喂给一个新的 video 元素——这样 canvas 不会被跨域污染。
+   * 视频笔记：采集当下把视频文件下下来。
+   * 小红书视频直链带签名会过期，事后服务端再去拉是 403，
+   * 而且口播视频的内容在话里不在画面上，所以要整个文件回去做转写。
    */
-  async function grabFrames(videoUrl, count = 4) {
-    if (!videoUrl) return [];
-    let objectUrl = null;
+  async function fetchVideo(videoUrl) {
+    if (!videoUrl) return null;
     try {
       const res = await fetch(videoUrl);
-      if (!res.ok) return [];
+      if (!res.ok) return null;
       const blob = await res.blob();
-      objectUrl = URL.createObjectURL(blob);
-
-      const video = document.createElement("video");
-      video.muted = true;
-      video.playsInline = true;
-      video.src = objectUrl;
-
-      await new Promise((resolve, reject) => {
-        video.onloadedmetadata = resolve;
-        video.onerror = () => reject(new Error("视频解码失败"));
-        setTimeout(() => reject(new Error("视频加载超时")), 20000);
-      });
-
-      const duration = Number.isFinite(video.duration) ? video.duration : 0;
-      if (duration <= 0) return [];
-
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(1, 1080 / Math.max(video.videoWidth, video.videoHeight));
-      canvas.width = Math.round(video.videoWidth * scale);
-      canvas.height = Math.round(video.videoHeight * scale);
-      const ctx = canvas.getContext("2d");
-
-      const frames = [];
-      for (let i = 1; i <= count; i++) {
-        // 均匀取样，跳过片头片尾
-        const t = (duration * i) / (count + 1);
-        await new Promise((resolve, reject) => {
-          video.onseeked = resolve;
-          video.onerror = () => reject(new Error("seek 失败"));
-          video.currentTime = t;
-          setTimeout(resolve, 4000);
-        });
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        frames.push(canvas.toDataURL("image/jpeg", 0.82));
-      }
-      return frames;
+      // 太大的先不传，避免卡住采集
+      if (blob.size > 200 * 1024 * 1024) return null;
+      return blob;
     } catch {
-      return [];
-    } finally {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      return null;
     }
   }
 
@@ -105,8 +69,6 @@
 
   async function buildPayload(note, noteJson) {
     const videoUrl = note.type === "video" ? pickVideoUrl(noteJson) : null;
-    // 视频笔记多抓几帧，图文笔记不用
-    const frames = videoUrl ? await grabFrames(videoUrl) : [];
 
     const images = (note.imageList || [])
       .map((img) => img.urlDefault || img.urlPre || img.url)
@@ -123,7 +85,6 @@
       author: (note.user && note.user.nickname) || null,
       images,
       video_url: videoUrl,
-      frames,
       tags,
       published_at: note.time ? new Date(note.time).toISOString() : null,
       raw: note,
@@ -140,7 +101,6 @@
       const note = JSON.parse(noteJson);
       if (!note.noteId) throw new Error("笔记缺少 noteId");
 
-      if (note.type === "video") toast("正在抽取视频画面…", "pending");
       const payload = await buildPayload(note, noteJson);
 
       const res = await fetch(ENDPOINT, {
@@ -153,6 +113,27 @@
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
 
       const label = body.status === "updated" ? "已更新" : "已保存";
+
+      // 视频笔记：紧接着把视频文件传上去，供服务端转写
+      if (note.type === "video" && body.id) {
+        toast("正在上传视频（用于转文字）…", "pending");
+        const blob = await fetchVideo(payload.video_url);
+        if (blob) {
+          const up = await fetch(`${MEDIA_ENDPOINT}/${body.id}/media`, {
+            method: "POST",
+            headers: { "Content-Type": "video/mp4" },
+            body: blob,
+          });
+          if (up.ok) {
+            const mb = (blob.size / 1024 / 1024).toFixed(1);
+            toast(`${label}：${note.title || note.noteId}（视频 ${mb}MB 已上传）`, "success");
+            return;
+          }
+        }
+        toast(`${label}，但视频没传上去（可稍后重采）`, "error");
+        return;
+      }
+
       toast(`${label}：${note.title || note.noteId}`, "success");
     } catch (err) {
       const message = (err && err.message) || String(err);

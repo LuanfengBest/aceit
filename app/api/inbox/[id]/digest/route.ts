@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { inboxItems, insights, questions } from "@/lib/db/schema";
 import { digestInboxItem } from "@/lib/digest-inbox";
+import { transcribe } from "@/lib/transcribe";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,15 +30,29 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const images = parseList(item.images);
   const frames = parseList(item.frames);
 
-  if (item.type === "video" && frames.length === 0) {
-    db.update(inboxItems).set({ status: "failed" }).where(eq(inboxItems.id, id)).run();
-    return NextResponse.json(
-      {
-        error:
-          "这条视频是旧版扩展采的，没有画面帧，而小红书视频直链已过期。用新版扩展重新采集一次即可。",
-      },
-      { status: 400 }
-    );
+  // 视频：先转文字。口播视频的内容在话里，不在画面上
+  let transcript = item.transcript;
+  if (item.type === "video" && !transcript) {
+    if (!item.mediaPath) {
+      db.update(inboxItems).set({ status: "failed" }).where(eq(inboxItems.id, id)).run();
+      return NextResponse.json(
+        {
+          error:
+            "这条视频没有存下文件，而小红书视频直链已过期。用新版扩展重新采集一次即可。",
+        },
+        { status: 400 }
+      );
+    }
+    try {
+      transcript = await transcribe(item.mediaPath);
+      db.update(inboxItems).set({ transcript }).where(eq(inboxItems.id, id)).run();
+    } catch (err) {
+      db.update(inboxItems).set({ status: "failed" }).where(eq(inboxItems.id, id)).run();
+      return NextResponse.json(
+        { error: `转写失败：${err instanceof Error ? err.message : String(err)}` },
+        { status: 502 }
+      );
+    }
   }
 
   try {
@@ -48,6 +63,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       images,
       frames,
       isVideo: item.type === "video",
+      transcript,
     });
 
     // 重新消化时先清掉上一轮的产物，避免重复堆积
@@ -90,6 +106,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       id,
       company: result.company,
       imagesRead: result.imagesRead,
+      transcriptChars: transcript?.length ?? 0,
       questions: result.questions.length,
       insights: result.insights.length,
     });
