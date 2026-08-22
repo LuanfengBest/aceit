@@ -16,9 +16,12 @@ export type LLMTask =
 export const TASK_MODEL: Record<LLMTask, string> = {
   extract: "claude-haiku-4-5",
   classify: "claude-haiku-4-5",
-  extract_image: "claude-sonnet-5",
-  refine: "claude-sonnet-5",
-  generate: "claude-sonnet-5",
+  // 下面三项本来是 claude-sonnet-5。先全切 Haiku 跑通流程省钱，
+  // 等真正要拿答案去面试了，把 generate 和 refine 改回 sonnet-5——
+  // 那两步的输出质量才是直接影响面试表现的。
+  extract_image: "claude-haiku-4-5",
+  refine: "claude-haiku-4-5",
+  generate: "claude-haiku-4-5",
 };
 
 /** 各任务的默认输出上限，可被 options.maxOutputTokens 覆盖。 */
