@@ -1,5 +1,5 @@
 import { createAnthropic, type AnthropicProvider } from "@ai-sdk/anthropic";
-import { generateText, type ModelMessage } from "ai";
+import { generateObject, generateText, jsonSchema, type ModelMessage } from "ai";
 
 /**
  * 模型调用的唯一入口。业务代码只认 task，不认模型名，也不直接引用 provider SDK。
@@ -110,6 +110,48 @@ export async function callLLM(
 
   return {
     text: result.text,
+    task,
+    model,
+    usage: {
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      totalTokens: result.usage.totalTokens,
+    },
+  };
+}
+
+
+/**
+ * 要结构化结果时用这个，不要用 callLLM 再自己解析 JSON。
+ * provider 侧会约束输出格式，原文里的引号、换行都由它负责转义。
+ */
+export async function callLLMObject<T>(
+  task: LLMTask,
+  prompt: string,
+  schema: Record<string, unknown>,
+  options: LLMOptions = {}
+): Promise<{ object: T } & Omit<LLMResult, "text">> {
+  const model = options.model ?? TASK_MODEL[task];
+  const images = options.images ?? [];
+
+  const content =
+    images.length > 0
+      ? [...images.map(toImagePart), { type: "text" as const, text: prompt }]
+      : prompt;
+
+  const messages: ModelMessage[] = [{ role: "user", content }];
+
+  const result = await generateObject({
+    model: getProvider()(model),
+    schema: jsonSchema<T>(schema),
+    system: options.system,
+    messages,
+    maxOutputTokens: options.maxOutputTokens ?? TASK_MAX_OUTPUT_TOKENS[task],
+    abortSignal: options.abortSignal,
+  });
+
+  return {
+    object: result.object,
     task,
     model,
     usage: {

@@ -1,0 +1,1 @@
+ALTER TABLE `experiences` ADD `sources` text DEFAULT '[]' NOT NULL;

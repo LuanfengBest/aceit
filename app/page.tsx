@@ -1,10 +1,24 @@
-export default function Home() {
+import { HeroCopy } from "@/components/home/hero-copy";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { inboxItems, experiences, profileDocs, roleProfiles } from "@/lib/db/schema";
+
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const docs = db.select({ id: profileDocs.id }).from(profileDocs).all().length;
+  const stories = db.select({ id: experiences.id }).from(experiences).all().length;
+  const roles = db.select({ id: roleProfiles.id }).from(roleProfiles).all().length;
+  const pending = db
+    .select({ id: inboxItems.id })
+    .from(inboxItems)
+    .where(eq(inboxItems.status, "pending"))
+    .all().length;
+
   return (
-    <main className="p-8">
-      <h1 className="text-2xl font-bold">aceit</h1>
-      <p className="mt-2 text-muted-foreground">
-        面试打磨系统。查看 <a href="/inbox" className="underline">/inbox</a>。
-      </p>
-    </main>
+    <>
+      <HeroCopy stories={stories} roles={roles} pending={pending} docs={docs} />
+
+    </>
   );
 }

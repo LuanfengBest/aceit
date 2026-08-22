@@ -4,44 +4,53 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
-  }
+    /* ---- 基础色板 ---- */
+    --bg: #fdfcf4;
+    --surface: #ffffff;
+    --surface-2: #f6f4e8;
+    --border: #e8e4d4;
+    --text: #1f2430;
+    --text-muted: #6e6a60;
+    --ink: #243c54;
 
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /* ---- 马卡龙功能色：同一页面按语义并用多种 ---- */
+    --peach: #fbe0c8;
+    --peach-ink: #b5673a;
+    --mint: #dff2e3;
+    --mint-ink: #3f7a5a;
+    --lavender: #e7e3f7;
+    --lavender-ink: #5e55a3;
+    --lemon: #faf3c8;
+    --lemon-ink: #8a7420;
+
+    /* ---- 主操作 ---- */
+    --accent: #c4643c;
+    --accent-soft: #f7e2d6;
+
+    /* 规范外的错误色，shadcn 的 destructive 需要 */
+    --danger: #a6402b;
+
+    /* 卡片 12px；按钮和输入框走 calc → 8px */
+    --radius: 12px;
+
+    /* ---- shadcn 语义 token → 上面的色板 ---- */
+    --background: var(--bg);
+    --foreground: var(--text);
+    --card: var(--surface);
+    --card-foreground: var(--text);
+    --popover: var(--surface);
+    --popover-foreground: var(--text);
+    --primary: var(--accent);
+    --primary-foreground: var(--surface);
+    --secondary: var(--surface-2);
+    --secondary-foreground: var(--text);
+    --muted: var(--surface-2);
+    --muted-foreground: var(--text-muted);
+    --accent-foreground: var(--surface);
+    --destructive: var(--danger);
+    --destructive-foreground: var(--surface);
+    --input: var(--border);
+    --ring: var(--accent);
   }
 }
 
@@ -49,7 +58,36 @@
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+
+  /* 数字一律等宽，列表里对齐 */
+  table,
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* 滚动驱动的景深层。支持的浏览器上层与层之间会拉开纵深；
+   不支持时动画不跑，只是静态分层，不会破版 */
+@supports (animation-timeline: view()) {
+  .depth-layer {
+    animation-timeline: view();
+    animation-range: entry 0% exit 100%;
+  }
+}
+
+/* 深色区块里的正文 */
+.on-dark {
+  color: #efe9dd;
+}
+.on-dark-muted {
+  color: rgba(239, 233, 221, 0.62);
 }
