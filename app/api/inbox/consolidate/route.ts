@@ -3,11 +3,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { insights, questions } from "@/lib/db/schema";
 import {
-  assignQuestionTopics,
+  assignQuestionTaxonomy,
   consolidateInsights,
   findDuplicateQuestions,
   mergeTopics,
 } from "@/lib/consolidate-insights";
+import { isCanonicalL1, MAX_L1, MAX_L2_PER_L1 } from "@/lib/taxonomy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -92,45 +93,134 @@ export async function POST() {
       db.update(questions).set({ topic: to }).where(eq(questions.topic, from)).run();
     }
 
-    // 题也归主题，复用刚才 insights 定下来的主题名
-    const topicsAfter = [
-      ...new Set(
-        db
-          .select({ topic: insights.topic })
-          .from(insights)
-          .where(and(isNull(insights.mergedInto), isNull(insights.questionId)))
-          .all()
-          .map((r) => r.topic)
-          .filter((t): t is string => !!t)
-      ),
-    ];
-    const merged = new Set(dupes.map((d) => d.id));
-
-    // 只给主问题分主题：追问必须跟父级同组，否则渲染时会跟主问题拆散
+    // 题分两级。只给主问题分：追问必须跟父级同组，
+    // 否则渲染时会跟主问题拆散
     const allInbox = db
       .select({ id: questions.id, text: questions.text, parentId: questions.parentId })
       .from(questions)
       .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
       .all();
 
+    const merged = new Set(dupes.map((d) => d.id));
     const mains = allInbox.filter((q) => q.parentId === null && !merged.has(q.id));
-    const qTopics = await assignQuestionTopics(
+
+    // 已经在用的二级分类喂回去，避免每批素材都起一套同义的新名
+    const existingL2ByL1 = new Map<string, string[]>();
+    for (const row of db
+      .select({ l1: questions.topicL1, l2: questions.topic })
+      .from(questions)
+      .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
+      .all()) {
+      if (!row.l1 || !row.l2) continue;
+      const list = existingL2ByL1.get(row.l1) ?? [];
+      if (!list.includes(row.l2)) list.push(row.l2);
+      existingL2ByL1.set(row.l1, list);
+    }
+
+    const assigned = await assignQuestionTaxonomy(
       mains.map((q) => ({ id: q.id, text: q.text })),
-      topicsAfter
+      existingL2ByL1
     );
 
-    const topicById = new Map(qTopics.map((a) => [a.id, a.topic]));
-    for (const a of qTopics) {
-      db.update(questions).set({ topic: a.topic }).where(eq(questions.id, a.id)).run();
+    for (const a of assigned) {
+      db.update(questions)
+        .set({ topicL1: a.l1, topic: a.l2 })
+        .where(eq(questions.id, a.id))
+        .run();
     }
-    // 追问继承父级主题
-    for (const q of allInbox) {
-      if (q.parentId === null) continue;
-      const inherited = topicById.get(q.parentId);
-      if (inherited) {
-        db.update(questions).set({ topic: inherited }).where(eq(questions.id, q.id)).run();
+
+    // 一级分类攒多了就压一轮。固定的五个不参与合并，
+    // 只压模型新建的那些——不然固定集合就白设了
+    const liveL1 = [
+      ...new Set(
+        db
+          .select({ l1: questions.topicL1 })
+          .from(questions)
+          .where(and(eq(questions.source, "inbox"), isNull(questions.mergedInto)))
+          .all()
+          .map((r) => r.l1)
+          .filter((t): t is string => !!t)
+      ),
+    ];
+    let l1Merged = 0;
+    if (liveL1.length > MAX_L1) {
+      const remapL1 = await mergeTopics(liveL1, MAX_L1);
+      for (const [from, to] of remapL1) {
+        if (isCanonicalL1(from) && from === to) continue;
+        db.update(questions).set({ topicL1: to }).where(eq(questions.topicL1, from)).run();
+        l1Merged++;
       }
     }
+
+    // 每个一级下面的二级也压，超了才动
+    let l2Merged = 0;
+    for (const l1 of liveL1) {
+      const l2s = [
+        ...new Set(
+          db
+            .select({ l2: questions.topic })
+            .from(questions)
+            .where(
+              and(
+                eq(questions.source, "inbox"),
+                eq(questions.topicL1, l1),
+                isNull(questions.mergedInto)
+              )
+            )
+            .all()
+            .map((r) => r.l2)
+            .filter((t): t is string => !!t)
+        ),
+      ];
+      if (l2s.length <= MAX_L2_PER_L1) continue;
+      const remapL2 = await mergeTopics(l2s, MAX_L2_PER_L1);
+      for (const [from, to] of remapL2) {
+        if (from === to) continue;
+        db.update(questions)
+          .set({ topic: to })
+          .where(and(eq(questions.topicL1, l1), eq(questions.topic, from)))
+          .run();
+        l2Merged++;
+      }
+    }
+
+    // 追问继承父级的两级分类
+    const taxoById = new Map(
+      db
+        .select({ id: questions.id, l1: questions.topicL1, l2: questions.topic })
+        .from(questions)
+        .where(and(eq(questions.source, "inbox"), isNull(questions.parentId)))
+        .all()
+        .map((r) => [r.id, { l1: r.l1, l2: r.l2 }] as const)
+    );
+    for (const q of allInbox) {
+      if (q.parentId === null) continue;
+      const inherited = taxoById.get(q.parentId);
+      if (!inherited) continue;
+      db.update(questions)
+        .set({ topicL1: inherited.l1, topic: inherited.l2 })
+        .where(eq(questions.id, q.id))
+        .run();
+    }
+
+    // 挂在题上的答法跟着题走，playbook 里的按 kind 分组、不用主题
+    for (const row of db
+      .select({ id: insights.id, questionId: insights.questionId })
+      .from(insights)
+      .where(isNull(insights.mergedInto))
+      .all()) {
+      if (row.questionId === null) continue;
+      const t = taxoById.get(row.questionId);
+      if (!t) continue;
+      db.update(insights)
+        .set({ topicL1: t.l1, topic: t.l2 })
+        .where(eq(insights.id, row.id))
+        .run();
+    }
+
+    const newL1 = assigned
+      .filter((a) => a.newL1Reason && !isCanonicalL1(a.l1))
+      .map((a) => ({ l1: a.l1, why: a.newL1Reason }));
 
     return NextResponse.json({
       insights: live.length,
@@ -139,6 +229,10 @@ export async function POST() {
       topicsMerged: remap.size,
       questionsBefore: inboxQs.length,
       questionsMerged: dupes.length,
+      l1Merged,
+      l2Merged,
+      // 模型自己开的新一级分类，报出来让人能看见框架外多了什么
+      newL1: [...new Map(newL1.map((n) => [n.l1, n])).values()],
     });
   } catch (err) {
     return NextResponse.json(

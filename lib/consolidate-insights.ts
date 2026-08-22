@@ -1,4 +1,5 @@
 import { callLLMObject } from "@/lib/llm";
+import { canonicalizeL1, l1Block, MAX_L2_PER_L1 } from "@/lib/taxonomy";
 
 const SYSTEM = `你在整理一堆从面经素材里抽出来的知识条目。素材是零散进来的，所以会有大量重复和碎片。
 
@@ -149,12 +150,32 @@ export async function findDuplicateQuestions(
 
 
 /** 给面经题归主题，复用 insights 那套主题名，两边对得上 */
-const QT_SYSTEM = `给面试题分主题，把零散的题收进少数几个大主题里。
+const QT_SYSTEM = `把面试题归到两级分类里。
 
-- **优先复用已有主题名**，实在装不下才新建。
-- 主题名用中文 4-10 字，如"AI搜索与RAG"、"项目讲述"、"指标与实验"。
-- 主题数量有硬上限，见输入里给出的数字。宁可粗，不要细。
-- 追问和它的主问题应该归到同一个主题。`;
+一级分类是**固定集合**，见输入。绝大多数题都应该落进这五个之一。
+**只有当一道题明显不属于任何一个时，才新建一级分类**，并在 new_l1_reason 里
+说明现有的为什么都装不下。新建是允许的，但要克制——每新建一个，
+使用者扫读时就多一个要分辨的东西。用了现成的就把 new_l1_reason 填 null。
+
+二级分类在一级下面细分：
+- Technical Foundations 下面按**技术点**分（意图识别、RAG、评测……）
+- AI Application 下面按**业务域**分（导购、搜索推荐、内容生成……），不要按技术点分
+- 其余按输入里给的候选来
+
+二级分类名：英文，2-4 个词，首字母大写，如 "Agent & Intent"、"Shopping & Guide"。
+每个一级下面最多几个二级，见输入里的数字。宁可粗，不要细。
+已经在用的二级分类优先复用，不要起同义的新名（"Search & Rec" 和
+"Search & Recommendation" 算同义，选一个）。
+
+判断示例：
+- "意图识别与实体识别有什么区别" → Technical Foundations / Agent & Intent
+  （考原理，不绑业务场景）
+- "AI导购怎么衡量成功" → AI Application / Shopping & Guide
+  （绑在导购这个业务域上）
+- "介绍一个你负责的AI项目" → Experience & Behavior / Project Deep-dive
+- "怎么防止模型输出违规内容" → Safety & Governance / Content Risk
+
+追问和它的主问题必须归到同一个二级分类。`;
 
 const QT_SCHEMA = {
   type: "object",
@@ -165,9 +186,14 @@ const QT_SCHEMA = {
         type: "object",
         properties: {
           id: { type: "integer" },
-          topic: { type: "string" },
+          l1: { type: "string", description: "一级分类名" },
+          l2: { type: "string", description: "二级分类名" },
+          new_l1_reason: {
+            type: ["string", "null"],
+            description: "新建了一级分类才填，说明为什么现有的都装不下",
+          },
         },
-        required: ["id", "topic"],
+        required: ["id", "l1", "l2", "new_l1_reason"],
         additionalProperties: false,
       },
     },
@@ -176,30 +202,56 @@ const QT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export async function assignQuestionTopics(
+export interface TaxonomyAssignment {
+  id: number;
+  l1: string;
+  l2: string;
+  /** 模型新建的一级分类，落库前会被记下来提示用户 */
+  newL1Reason: string | null;
+}
+
+/**
+ * 给题分两级。一级优先用固定集合，装不下才新建。
+ * 二级在一级下面按业务域/技术点细分，允许模型自由起名。
+ */
+export async function assignQuestionTaxonomy(
   items: { id: number; text: string }[],
-  existingTopics: string[]
-): Promise<{ id: number; topic: string }[]> {
+  existingL2ByL1: Map<string, string[]>
+): Promise<TaxonomyAssignment[]> {
   if (items.length === 0) return [];
 
-  const topicsBlock =
-    existingTopics.length > 0
-      ? `已有主题（优先复用）：\n${existingTopics.map((t) => `- ${t}`).join("\n")}`
-      : "（还没有主题，你来定）";
+  const existingBlock =
+    existingL2ByL1.size > 0
+      ? `\n## 已经在用的二级分类（优先复用，别起同义的新名）\n${[...existingL2ByL1]
+          .map(([l1, l2s]) => `${l1}：${l2s.join(" / ")}`)
+          .join("\n")}`
+      : "";
 
   const { object } = await callLLMObject<{
-    assignments: { id: number; topic: string }[];
+    assignments: {
+      id: number;
+      l1: string;
+      l2: string;
+      new_l1_reason: string | null;
+    }[];
   }>(
     "classify",
-    `主题数量上限：${Math.max(4, Math.min(8, Math.ceil(items.length / 3)))} 个。\n\n${topicsBlock}\n\n## 待归类的题\n${items.map((q) => `[id=${q.id}] ${q.text}`).join("\n")}`,
+    `## 一级分类（固定集合）\n${l1Block()}\n${existingBlock}\n\n## 每个一级下面最多 ${MAX_L2_PER_L1} 个二级分类\n\n## 待归类的题\n${items
+      .map((q) => `[id=${q.id}] ${q.text}`)
+      .join("\n")}`,
     QT_SCHEMA,
-    { system: QT_SYSTEM, maxOutputTokens: 6000 }
+    { system: QT_SYSTEM, maxOutputTokens: 8000 }
   );
 
   const valid = new Set(items.map((i) => i.id));
   return (object.assignments ?? [])
     .filter((a) => valid.has(a.id))
-    .map((a) => ({ id: a.id, topic: (a.topic ?? "").trim() || "未分类" }));
+    .map((a) => ({
+      id: a.id,
+      l1: canonicalizeL1(a.l1 ?? ""),
+      l2: (a.l2 ?? "").trim() || "General",
+      newL1Reason: (a.new_l1_reason ?? "")?.trim() || null,
+    }));
 }
 
 /** 主题攒多了就合并。输入一批主题名，输出「旧名 → 新名」的映射 */
@@ -208,7 +260,7 @@ const MERGE_SYSTEM = `把一批主题名合并成更少、更宽的主题。
 - 语义接近的合并成一个，用其中最合适的名字，或者起一个更宽的新名。
 - 合并后的数量必须不超过给定的上限。
 - 每个旧主题都要有归属，不能漏。
-- 主题名保持中文 4-10 字。`;
+- 分类名保持英文 2-4 个词，首字母大写。`;
 
 const MERGE_SCHEMA = {
   type: "object",

@@ -128,8 +128,14 @@ export const questions = sqliteTable("questions", {
   inboxItemId: integer("inbox_item_id").references(() => inboxItems.id, {
     onDelete: "set null",
   }),
-  /** 主题分组，和 insights.topic 共用同一套命名 */
+  /**
+   * 二级分类。一级见 topic_l1。
+   * 之前只有这一层，结果「意图识别」和「AI产品与应用实践」并排成了同级，
+   * 但前者其实是后者的子集——分不出层次，扫读时就没有秩序。
+   */
   topic: text("topic"),
+  /** 一级分类。固定集合优先，模型可新建，见 lib/taxonomy.ts */
+  topicL1: text("topic_l1"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -207,8 +213,10 @@ export const insights = sqliteTable("insights", {
   content: text("content").notNull(),
   /** 关联的公司名，没有就 null */
   company: text("company"),
-  /** 主题分组。同一主题的多条会归并到一起展示，避免几百条平铺 */
+  /** 二级分类。挂在题上的跟随题走，没挂题的进 playbook 按 kind 分组 */
   topic: text("topic"),
+  /** 一级分类，见 lib/taxonomy.ts */
+  topicL1: text("topic_l1"),
   /**
    * 这条答法回答的是哪道题。
    * approach 类必须尽量挂上，否则用户看到一条悬空的答法，

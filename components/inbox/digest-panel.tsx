@@ -28,6 +28,9 @@ const STATUS_LABEL: Record<DigestRow["status"], string> = {
   failed: "Failed",
 };
 
+/** 一页最多显示多少条信号，多的翻页 */
+const PAGE_SIZE = 15;
+
 export function DigestPanel({ rows }: { rows: DigestRow[] }) {
   const router = useRouter();
   const [openRow, setOpenRow] = useState<number | null>(null);
@@ -35,6 +38,12 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
   const [queue, setQueue] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
+  const [page, setPage] = useState(0);
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  // 删素材会让页数变少，停在不存在的页上就成空白了
+  const safePage = Math.min(page, pageCount - 1);
+  const visibleRows = rows.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   const pending = rows.filter((r) => r.status !== "processed");
 
@@ -149,7 +158,7 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {visibleRows.map((row) => (
               <Fragment key={row.id}>
               <tr
                 className="h-row border-b border-border transition-colors last:border-b-0 hover:bg-surface-2"
@@ -230,6 +239,47 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
           </tbody>
         </table>
       </div>
+
+      {pageCount > 1 && (
+        <div className="mt-2.5 flex items-center gap-3">
+          <p className="font-mono text-meta text-muted-foreground">
+            {safePage * PAGE_SIZE + 1}–{safePage * PAGE_SIZE + visibleRows.length} of{" "}
+            {rows.length}
+          </p>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage(safePage - 1)}
+              disabled={safePage === 0}
+              className="rounded-md border border-border px-2.5 py-1 font-mono text-meta text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-35 disabled:hover:border-border disabled:hover:text-muted-foreground"
+            >
+              ←
+            </button>
+            {Array.from({ length: pageCount }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setPage(i)}
+                className={`min-w-[1.75rem] rounded-md border px-2 py-1 font-mono text-meta transition-colors ${
+                  i === safePage
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-border text-muted-foreground hover:border-accent hover:text-accent"
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPage(safePage + 1)}
+              disabled={safePage >= pageCount - 1}
+              className="rounded-md border border-border px-2.5 py-1 font-mono text-meta text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-35 disabled:hover:border-border disabled:hover:text-muted-foreground"
+            >
+              →
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
