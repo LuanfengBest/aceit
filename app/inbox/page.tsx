@@ -1,7 +1,13 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { inboxItems, insights, questions } from "@/lib/db/schema";
-import { CANONICAL_L1_NAMES, isCanonicalL1 } from "@/lib/taxonomy";
+import { CANONICAL_L1, CANONICAL_L1_NAMES, isCanonicalL1 } from "@/lib/taxonomy";
+import {
+  QuestionItem,
+  type AnswerRow,
+  type TaxonomyOption,
+} from "@/components/inbox/question-item";
+import { InsightActions } from "@/components/inbox/insight-actions";
 import { WorkShell } from "@/components/work-shell";
 import { DigestPanel, type DigestRow } from "@/components/inbox/digest-panel";
 
@@ -20,63 +26,6 @@ const KIND_TONE: Record<string, string> = {
   term: "bg-lemon text-lemon-ink",
   pitfall: "bg-peach text-peach-ink",
 };
-
-/** 一道题下面挂的答法：别人是怎么答的 */
-function QuestionAnswers({
-  rows,
-}: {
-  rows: {
-    insight: {
-      id: number;
-      title: string;
-      content: string;
-      evidence: string | null;
-      evidenceKind: string | null;
-    };
-    sourceUrl: string | null;
-    sourceTitle: string | null;
-  }[];
-}) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      {rows.map(({ insight, sourceUrl, sourceTitle }) => (
-        <details key={insight.id} className="group">
-          <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-pill bg-mint px-2.5 py-0.5 font-mono text-meta uppercase tracking-[0.1em] text-mint-ink transition-opacity hover:opacity-80">
-            <span className="transition-transform group-open:rotate-90">›</span>
-            How they answered
-          </summary>
-          <div className="mt-2 rounded-md border border-mint bg-mint/35 px-3.5 py-2.5">
-            <div className="flex items-baseline gap-2">
-              <p className="text-meta text-foreground">{insight.title}</p>
-              {sourceUrl && (
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-auto max-w-[16rem] shrink-0 truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
-                >
-                  {sourceTitle || "原文"} ↗
-                </a>
-              )}
-            </div>
-            <p className="mt-1.5 text-meta text-muted-foreground">{insight.content}</p>
-            {insight.evidence && (
-              <div className="mt-2.5 border-t border-mint pt-2">
-                <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-mint-ink">
-                  {insight.evidenceKind === "image" ? "From image" : "From text"}
-                </p>
-                <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
-                  {insight.evidence}
-                </p>
-              </div>
-            )}
-          </div>
-        </details>
-      ))}
-    </div>
-  );
-}
 
 export default async function InboxPage() {
   const items = db
@@ -143,6 +92,37 @@ export default async function InboxPage() {
       (a, b) =>
         (l1Order.get(a.l1) ?? 99) - (l1Order.get(b.l1) ?? 99) || b.total - a.total
     );
+
+  // 客户端组件要的扁平结构
+  const answersOf = (qid: number): AnswerRow[] =>
+    (answersByQuestion.get(qid) ?? []).map(({ insight, sourceUrl, sourceTitle }) => ({
+      id: insight.id,
+      title: insight.title,
+      content: insight.content,
+      evidence: insight.evidence,
+      evidenceKind: insight.evidenceKind,
+      sourceUrl,
+      sourceTitle,
+    }));
+
+  // 移动目标：固定分类的全部候选 + 现在实际用着的，去重后按一级顺序排。
+  // 只列现有的话，一个空的二级分类就永远没法往里放东西了
+  const optionSet = new Map<string, TaxonomyOption>();
+  for (const def of CANONICAL_L1) {
+    for (const seed of def.seeds) {
+      optionSet.set(`${def.name}/${seed}`, { l1: def.name, l2: seed });
+    }
+  }
+  for (const q of mains) {
+    if (!q.topicL1 || !q.topic) continue;
+    optionSet.set(`${q.topicL1}/${q.topic}`, { l1: q.topicL1, l2: q.topic });
+  }
+  const moveOptions = [...optionSet.values()].sort(
+    (a, b) =>
+      (l1Order.get(a.l1) ?? 99) - (l1Order.get(b.l1) ?? 99) ||
+      a.l1.localeCompare(b.l1) ||
+      a.l2.localeCompare(b.l2)
+  );
 
   // Playbook 只放没挂到具体题上的通用知识，按 kind 分组——
   // 它们是元知识（黑话、踩坑、公司情报），套题的分类树上去反而重名
@@ -226,31 +206,23 @@ export default async function InboxPage() {
                         </span>
                       </summary>
                       <ul className="space-y-4 border-t border-border px-3.5 py-3.5">
-                        {qs.map((q) => {
-                          const kids = followUps.get(q.id) ?? [];
-                          return (
-                            <li key={q.id}>
-                              <p className="text-body">{q.text}</p>
-
-                              <QuestionAnswers rows={answersByQuestion.get(q.id) ?? []} />
-
-                              {kids.length > 0 && (
-                                <ul className="mt-2.5 space-y-2.5 border-l border-border pl-4">
-                                  {kids.map((k) => (
-                                    <li key={k.id}>
-                                      <p className="text-meta text-muted-foreground">
-                                        ↳ {k.text}
-                                      </p>
-                                      <QuestionAnswers
-                                        rows={answersByQuestion.get(k.id) ?? []}
-                                      />
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </li>
-                          );
-                        })}
+                        {qs.map((q) => (
+                          <QuestionItem
+                            key={q.id}
+                            node={{
+                              id: q.id,
+                              text: q.text,
+                              answers: answersOf(q.id),
+                              followUps: (followUps.get(q.id) ?? []).map((k) => ({
+                                id: k.id,
+                                text: k.text,
+                                answers: answersOf(k.id),
+                              })),
+                            }}
+                            current={{ l1, l2 }}
+                            options={moveOptions}
+                          />
+                        ))}
                       </ul>
                     </details>
                   ))}
@@ -325,6 +297,7 @@ export default async function InboxPage() {
                       </div>
                       <p className="mt-2 text-body">{i.title}</p>
                       <p className="mt-1 text-meta text-muted-foreground">{i.content}</p>
+                      <InsightActions id={i.id} kind={i.kind} />
                       {i.evidence && (
                         <details className="mt-1.5">
                           <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:text-accent">
