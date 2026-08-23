@@ -113,6 +113,11 @@ export default async function StudioPage({
     }),
   }));
 
+  const expRows = db
+    .select({ id: experiences.id, title: experiences.title, detail: experiences.detail })
+    .from(experiences)
+    .all();
+
   const experienceTitles: Record<number, string> = {};
   for (const e of db
     .select({ id: experiences.id, title: experiences.title })
@@ -152,6 +157,11 @@ export default async function StudioPage({
         activeRoleId={activeRoleId}
         items={items}
         experienceTitles={experienceTitles}
+        experiences={expRows.map((e) => ({
+          id: e.id,
+          title: e.title,
+          chars: (e.detail ?? "").length,
+        }))}
       />
     </WorkShell>
   );

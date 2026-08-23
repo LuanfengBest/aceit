@@ -46,40 +46,43 @@ export function WorkShell({
 
   if (layout === "banner") {
     return (
-      <div className="relative min-h-[calc(100vh-3.25rem)] overflow-hidden">
+      <div className="relative min-h-[calc(100vh-3.25rem)]">
+        {/* 整张图铺满做底，压得很淡——它是氛围，不是内容。
+            之前压成顶部一条 banner，图被裁得只剩中间一截，什么都看不出来 */}
+        <div aria-hidden className="pointer-events-none fixed inset-0 -z-20 overflow-hidden">
+          <Image
+            src={image}
+            alt=""
+            fill
+            sizes="100vw"
+            className="scale-105 object-cover opacity-[0.13] blur-[2px]"
+            priority
+          />
+        </div>
+        {/* 色场盖在图上：保证正文对比度不受图片明暗影响 */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10"
+          className="pointer-events-none fixed inset-0 -z-10"
           style={{
-            background: `linear-gradient(180deg, ${f.s1} 0%, ${f.s2} 14%, ${f.s3} 28%, var(--bg) 46%)`,
+            background: `linear-gradient(180deg,
+              color-mix(in srgb, ${f.s1} 82%, transparent) 0%,
+              color-mix(in srgb, ${f.s2} 78%, transparent) 18%,
+              color-mix(in srgb, var(--bg) 86%, transparent) 42%,
+              color-mix(in srgb, var(--bg) 94%, transparent) 100%)`,
           }}
         />
 
-        <div className="mx-auto w-full max-w-[1500px] px-6 pt-6 sm:px-10">
-          <div className="relative h-[9.5rem] overflow-hidden rounded-lg sm:h-[11rem]">
-            <Image
-              src={image}
-              alt=""
-              fill
-              sizes="100vw"
-              className="object-cover object-[center_35%]"
-              priority
-            />
-            <div
-              aria-hidden
-              className="absolute inset-0"
-              style={{
-                background:
-                  "linear-gradient(100deg, rgba(24,20,16,0.86) 0%, rgba(24,20,16,0.55) 42%, rgba(24,20,16,0.12) 100%)",
-              }}
-            />
-            <div className="absolute inset-y-0 left-0 flex max-w-[42rem] flex-col justify-center p-6 sm:p-8">
-              <p className="font-mono text-meta uppercase tracking-[0.14em] text-white/65">
-                {meta}
-              </p>
-              <h1 className="mt-1 font-serif text-title text-white">{title}</h1>
-              <p className="mt-1.5 text-meta leading-relaxed text-white/75">{subtitle}</p>
-            </div>
+        <div className="mx-auto w-full max-w-[1500px] px-6 pt-8 sm:px-10">
+          {/* 标题还是留在深色块里——反色区是视觉规范里定的层次手段 */}
+          <div
+            className="inline-flex max-w-[46rem] flex-col rounded-lg px-6 py-5"
+            style={{ background: "var(--ink)" }}
+          >
+            <p className="font-mono text-meta uppercase tracking-[0.14em] text-white/60">
+              {meta}
+            </p>
+            <h1 className="mt-1 font-serif text-title text-white">{title}</h1>
+            <p className="mt-1.5 text-meta leading-relaxed text-white/70">{subtitle}</p>
           </div>
         </div>
 

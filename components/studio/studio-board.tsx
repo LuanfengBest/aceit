@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Answer, Question, RoleProfile } from "@/lib/db/schema";
 import { VoicePractice } from "@/components/studio/voice-practice";
 import { MockInterview } from "@/components/studio/mock-interview";
+import { SupplementBox } from "@/components/studio/supplement-box";
 
 export interface ReusableAnswer {
   answerId: number;
@@ -61,12 +62,14 @@ export function StudioBoard({
   activeRoleId,
   items,
   experienceTitles,
+  experiences,
 }: {
   roles: RoleProfile[];
   activeRole: RoleProfile | null;
   activeRoleId: number | null;
   items: QuestionWithAnswers[];
   experienceTitles: Record<number, string>;
+  experiences: { id: number; title: string; chars: number }[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<number | null>(items[0]?.question.id ?? null);
@@ -445,9 +448,11 @@ export function StudioBoard({
           actually ask.
         </p>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,40fr)_minmax(0,60fr)]">
           {/* ── 题目队列 ── */}
           <div className="space-y-4 lg:max-h-[calc(100vh-16rem)] lg:overflow-y-auto lg:pr-1">
+            <SupplementBox roleId={activeRoleId} experiences={experiences} />
+
             {/* 两大块的切换。一次只看一块 */}
             <div className="grid grid-cols-2 gap-1.5">
               {sections.map((sec) => {
