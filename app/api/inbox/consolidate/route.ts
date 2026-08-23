@@ -5,7 +5,6 @@ import { insights, questions } from "@/lib/db/schema";
 import {
   assignQuestionTaxonomy,
   consolidateInsights,
-  findDuplicateQuestions,
   mergeTopics,
 } from "@/lib/consolidate-insights";
 import { isCanonicalL1, MAX_L1, MAX_L2_PER_L1 } from "@/lib/taxonomy";
@@ -52,27 +51,12 @@ export async function POST() {
       topicCount = new Set(assignments.map((a) => a.topic)).size;
     }
 
-    // 面经题去重
-    const inboxQs = db
-      .select({ id: questions.id, text: questions.text })
-      .from(questions)
-      .where(
-        and(
-          eq(questions.source, "inbox"),
-          isNull(questions.roleId),
-          isNull(questions.mergedInto)
-        )
-      )
-      .all();
-
-    const dupes = await findDuplicateQuestions(inboxQs);
-    for (const d of dupes) {
-      // 标记而不删除：判错了还能捞回来
-      db.update(questions)
-        .set({ mergedInto: d.keep })
-        .where(eq(questions.id, d.id))
-        .run();
-    }
+    // 题的去重不在这儿做了。
+    // 这里原来有一套自由配对的去重，把「怎么提高缓存命中率」并进了
+    // 「怎么防止Agent上下文溢出」、把「AI分身应该直接完成服务」并进了
+    // 「怎么把高风险回答控制在可接受范围」——两道毫不相干的题。
+    // 现在统一走 /api/questions/dedupe，那边有代码算的相似度门槛把关。
+    const dupes: { id: number; keep: number }[] = [];
 
     // 主题攒多了就压一轮，避免越消化越碎
     const afterAssign = [
@@ -262,7 +246,6 @@ export async function POST() {
       merged: mergedCount,
       topics: topicCount,
       topicsMerged: remap.size,
-      questionsBefore: inboxQs.length,
       questionsMerged: dupes.length,
       l1Merged,
       l2Merged,
