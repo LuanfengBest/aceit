@@ -4,6 +4,7 @@ import { interviewQas, questions, recordings, roleProfiles } from "@/lib/db/sche
 import { WorkShell } from "@/components/work-shell";
 import { DebriefForm } from "@/components/debrief/debrief-form";
 import { InterviewRecorder } from "@/components/debrief/interview-recorder";
+import { LivePrompter } from "@/components/debrief/live-prompter";
 import { RecordingList } from "@/components/debrief/recording-list";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,11 @@ export default async function DebriefPage() {
           {rows.length} logged
           {unprepared > 0 && <span className="text-danger"> · {unprepared} unprepared</span>}
         </p>
+      </div>
+
+      {/* 面试进行中用提词，面试结束后用录音复盘。两件事，同一页 */}
+      <div className="mb-4">
+        <LivePrompter roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
       </div>
 
       <InterviewRecorder roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
