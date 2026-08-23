@@ -83,6 +83,8 @@ export function StudioBoard({
   // 两大块一次只看一块。之前上下叠着放，通用那块 46 道题，
   // 要滚过全部才看得到岗位那块，等于没分开
   const [block, setBlock] = useState<"universal" | "role">("universal");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState<number | null>(null);
 
   const current = items.find((i) => i.question.id === selected) ?? items[0] ?? null;
 
@@ -186,6 +188,41 @@ export function StudioBoard({
       setBusy(null);
     }
   }
+
+  /** 改题的归属：在通用/岗位之间搬，或换业务域标签 */
+  async function moveQuestion(id: number, payload: Record<string, unknown>) {
+    setBusy(`move-${id}`);
+    try {
+      await fetch(`/api/questions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setEditing(null);
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteQuestion(id: number) {
+    setBusy(`del-${id}`);
+    try {
+      await fetch(`/api/questions/${id}`, { method: "DELETE" });
+      if (selected === id) setSelected(null);
+      setConfirming(null);
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** 可搬到的业务域标签：白名单里的 + 现在已经在用的 */
+  const topicChoices = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of items) if (i.question.topic) set.add(i.question.topic);
+    return [...set].sort();
+  }, [items]);
 
   async function setStatus(answerId: number, status: "keeper" | "draft") {
     await fetch(`/api/answers/${answerId}`, {
@@ -489,7 +526,7 @@ export function StudioBoard({
                             const p = progressOf(rowAnswers);
                             const mark = PROGRESS_MARK[p];
                             return (
-                              <li key={question.id}>
+                              <li key={question.id} className="group/row">
                                 <button
                                   type="button"
                                   onClick={() => setSelected(question.id)}
@@ -543,6 +580,111 @@ export function StudioBoard({
                                     </div>
                                   )}
                                 </button>
+
+                                {/* 改归属 / 删除。默认藏着，悬停才出来 */}
+                                <div className="mt-1 flex items-center gap-2 pl-1 opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditing(editing === question.id ? null : question.id)
+                                    }
+                                    className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
+                                  >
+                                    {editing === question.id ? "Close" : "Move"}
+                                  </button>
+                                  {confirming === question.id ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={busy !== null}
+                                        onClick={() => void deleteQuestion(question.id)}
+                                        className="font-mono text-[10px] uppercase tracking-[0.08em] text-accent transition-opacity hover:opacity-70 disabled:opacity-40"
+                                      >
+                                        Confirm delete
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirming(null)}
+                                        className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-foreground"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirming(question.id)}
+                                      className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
+
+                                {editing === question.id && (
+                                  <div className="mt-1.5 space-y-2 rounded-md border border-border bg-surface-2 px-3 py-2.5">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                                        Block
+                                      </span>
+                                      <button
+                                        type="button"
+                                        disabled={busy !== null}
+                                        onClick={() =>
+                                          void moveQuestion(question.id, { scope: "universal" })
+                                        }
+                                        className={`rounded-pill px-2 py-0.5 font-mono text-[10px] transition-opacity ${
+                                          question.scope === "universal"
+                                            ? "bg-lavender text-lavender-ink"
+                                            : "border border-border text-muted-foreground hover:border-accent"
+                                        }`}
+                                      >
+                                        Every interview
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={busy !== null || !activeRoleId}
+                                        onClick={() =>
+                                          void moveQuestion(question.id, {
+                                            scope: "domain",
+                                            role_id: activeRoleId,
+                                          })
+                                        }
+                                        className={`rounded-pill px-2 py-0.5 font-mono text-[10px] transition-opacity ${
+                                          question.scope === "domain"
+                                            ? "bg-peach text-peach-ink"
+                                            : "border border-border text-muted-foreground hover:border-accent"
+                                        } disabled:opacity-40`}
+                                      >
+                                        This role
+                                      </button>
+                                    </div>
+                                    {topicChoices.length > 0 && (
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                                          Area
+                                        </span>
+                                        <select
+                                          defaultValue={question.topic ?? ""}
+                                          disabled={busy !== null}
+                                          onChange={(e) =>
+                                            void moveQuestion(question.id, {
+                                              topic: e.target.value,
+                                            })
+                                          }
+                                          className="rounded-md border border-border bg-surface px-2 py-0.5 text-[12px] text-foreground focus:border-accent focus:outline-none"
+                                        >
+                                          <option value="">—</option>
+                                          {topicChoices.map((t) => (
+                                            <option key={t} value={t}>
+                                              {t}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </li>
                             );
                           })}

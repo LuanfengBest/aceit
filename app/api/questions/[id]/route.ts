@@ -38,27 +38,46 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const body = (await req.json().catch(() => ({}))) as {
     topic_l1?: unknown;
     topic?: unknown;
+    scope?: unknown;
+    role_id?: unknown;
   };
-  const topicL1 = typeof body.topic_l1 === "string" ? body.topic_l1.trim() : "";
-  const topic = typeof body.topic === "string" ? body.topic.trim() : "";
-  if (!topicL1 || !topic) {
-    return NextResponse.json({ error: "要给出一级和二级分类" }, { status: 400 });
+
+  const patch: Record<string, unknown> = {};
+  if (typeof body.topic_l1 === "string" && body.topic_l1.trim()) {
+    patch.topicL1 = body.topic_l1.trim();
+  }
+  if (typeof body.topic === "string" && body.topic.trim()) {
+    patch.topic = body.topic.trim();
+  }
+  // 在「通用」和「岗位专属」之间搬。通用题不绑岗位——
+  // 绑上去就成了每个岗位各一份，打磨成果会散掉
+  if (body.scope === "universal" || body.scope === "domain") {
+    patch.scope = body.scope;
+    patch.roleId = body.scope === "universal" ? null : (body.role_id ?? null);
+  } else if (body.role_id === null || Number.isInteger(body.role_id)) {
+    patch.roleId = body.role_id;
+  }
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "没有要改的字段" }, { status: 400 });
   }
 
   // 追问单独改会和主问题拆散，所以从主问题那一层开始动
   const rootId = target.parentId ?? id;
   const family = familyOf(rootId);
 
-  db.update(questions)
-    .set({ topicL1, topic })
-    .where(inArray(questions.id, family))
-    .run();
-  db.update(insights)
-    .set({ topicL1, topic })
-    .where(inArray(insights.questionId, family))
-    .run();
+  db.update(questions).set(patch).where(inArray(questions.id, family)).run();
+  // 挂在这些题上的答法跟着走
+  const insightPatch: Record<string, unknown> = {};
+  if (patch.topicL1 !== undefined) insightPatch.topicL1 = patch.topicL1;
+  if (patch.topic !== undefined) insightPatch.topic = patch.topic;
+  if (Object.keys(insightPatch).length > 0) {
+    db.update(insights)
+      .set(insightPatch)
+      .where(inArray(insights.questionId, family))
+      .run();
+  }
 
-  return NextResponse.json({ id: rootId, moved: family.length, topicL1, topic });
+  return NextResponse.json({ id: rootId, moved: family.length, ...patch });
 }
 
 /**

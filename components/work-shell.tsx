@@ -23,6 +23,7 @@ export function WorkShell({
   image,
   field,
   below,
+  layout = "split",
   children,
 }: {
   title: string;
@@ -32,9 +33,63 @@ export function WorkShell({
   field: FieldKey;
   /** 放在左图右内容区域下方、占满整幅宽度的内容 */
   below?: React.ReactNode;
+  /**
+   * split —— 左边一列固定图片，右边内容。适合内容窄、以阅读为主的页
+   * banner —— 图片压成顶部一条，内容全宽。
+   *   Studio 这种左右两栏 + 队列 + 版本链的密集操作台，
+   *   被 28% 的图片列挤掉之后每一栏都太窄了
+   */
+  layout?: "split" | "banner";
   children: React.ReactNode;
 }) {
   const f = FIELDS[field];
+
+  if (layout === "banner") {
+    return (
+      <div className="relative min-h-[calc(100vh-3.25rem)] overflow-hidden">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background: `linear-gradient(180deg, ${f.s1} 0%, ${f.s2} 14%, ${f.s3} 28%, var(--bg) 46%)`,
+          }}
+        />
+
+        <div className="mx-auto w-full max-w-[1500px] px-6 pt-6 sm:px-10">
+          <div className="relative h-[9.5rem] overflow-hidden rounded-lg sm:h-[11rem]">
+            <Image
+              src={image}
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover object-[center_35%]"
+              priority
+            />
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(100deg, rgba(24,20,16,0.86) 0%, rgba(24,20,16,0.55) 42%, rgba(24,20,16,0.12) 100%)",
+              }}
+            />
+            <div className="absolute inset-y-0 left-0 flex max-w-[42rem] flex-col justify-center p-6 sm:p-8">
+              <p className="font-mono text-meta uppercase tracking-[0.14em] text-white/65">
+                {meta}
+              </p>
+              <h1 className="mt-1 font-serif text-title text-white">{title}</h1>
+              <p className="mt-1.5 text-meta leading-relaxed text-white/75">{subtitle}</p>
+            </div>
+          </div>
+        </div>
+
+        <main className="mx-auto w-full max-w-[1500px] px-6 py-8 sm:px-10">{children}</main>
+        {below && (
+          <div className="mx-auto w-full max-w-[1500px] px-6 pb-14 sm:px-10">{below}</div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-[calc(100vh-3.25rem)] overflow-hidden">

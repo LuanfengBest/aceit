@@ -133,6 +133,7 @@ export default async function StudioPage({
       subtitle="Aceit asks out loud, you answer out loud. Every take is kept, so you can hear which version was actually better."
       image="/images/story-1.webp"
       field="roles"
+      layout="banner"
     >
       <div className="mb-5 flex items-baseline justify-between">
         <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
