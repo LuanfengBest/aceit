@@ -16,6 +16,9 @@ export interface AnswerRow {
 export interface QuestionNode {
   id: number;
   text: string;
+  /** 题本身的来源。没抽到答法的题也要能点回原文去看 */
+  sourceUrl: string | null;
+  sourceTitle: string | null;
   answers: AnswerRow[];
   followUps: { id: number; text: string; answers: AnswerRow[] }[];
 }
@@ -150,7 +153,21 @@ export function QuestionItem({
     <li className="group/q">
       <div className="flex items-start gap-2">
         <p className="text-body">{node.text}</p>
-        <div className="ml-auto flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-hover/q:opacity-100 focus-within:opacity-100">
+        {node.sourceUrl && (
+          <a
+            href={node.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto max-w-[16rem] shrink-0 truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
+          >
+            {node.sourceTitle || "原文"} ↗
+          </a>
+        )}
+        <div
+          className={`flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-hover/q:opacity-100 focus-within:opacity-100 ${
+            node.sourceUrl ? "" : "ml-auto"
+          }`}
+        >
           <button
             type="button"
             onClick={() => {

@@ -118,6 +118,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       transcriptChars: transcript?.length ?? 0,
       questions: result.questions.length,
       insights: result.insights.length,
+      dropped: result.dropped,
       linked: result.insights.filter((i) => i.answers !== null).length,
     });
   } catch (err) {

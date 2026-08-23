@@ -93,6 +93,17 @@ export default async function InboxPage() {
         (l1Order.get(a.l1) ?? 99) - (l1Order.get(b.l1) ?? 99) || b.total - a.total
     );
 
+  // 题的来源。没抽到答法的题也要能点回原文——
+  // 只在答法上挂链接的话，一份纯题目清单就完全没有出处可查了
+  const sourceById = new Map(
+    items.map((it) => [it.id, { url: it.sourceUrl, title: it.title }] as const)
+  );
+  const sourceOf = (inboxItemId: number | null) =>
+    (inboxItemId !== null ? sourceById.get(inboxItemId) : undefined) ?? {
+      url: null,
+      title: null,
+    };
+
   // 客户端组件要的扁平结构
   const answersOf = (qid: number): AnswerRow[] =>
     (answersByQuestion.get(qid) ?? []).map(({ insight, sourceUrl, sourceTitle }) => ({
@@ -212,6 +223,8 @@ export default async function InboxPage() {
                             node={{
                               id: q.id,
                               text: q.text,
+                              sourceUrl: sourceOf(q.inboxItemId).url,
+                              sourceTitle: sourceOf(q.inboxItemId).title,
                               answers: answersOf(q.id),
                               followUps: (followUps.get(q.id) ?? []).map((k) => ({
                                 id: k.id,
