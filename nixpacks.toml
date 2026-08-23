@@ -1,4 +1,5 @@
-# ffmpeg 装上：视频类功能虽然演示站关了，
-# 但装着不费事，将来想开就不用重配
+# better-sqlite3 是原生模块，容器里要现编译，
+# 所以 python3 / gcc / make 都得有——nixpacks 默认不装这些。
+# ffmpeg 是给音视频功能留的：演示站关着，但装上不费事，将来想开不用重配。
 [phases.setup]
-nixPkgs = ["nodejs_20", "ffmpeg"]
+nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake", "ffmpeg"]

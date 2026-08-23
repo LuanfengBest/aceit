@@ -17,7 +17,10 @@ if (existsSync(abs)) {
   console.log(`[demo] 库已存在，直接启动：${file}`);
 } else {
   console.log(`[demo] 没有库，先生成一份：${file}`);
-  const r = spawnSync("npx", ["tsx", "scripts/seed-demo.ts", file], {
+  // 用本地 node_modules 里的 tsx，不走 npx——
+  // 容器里没有 npx 缓存，现下载会失败
+  const bin = path.join(process.cwd(), "node_modules", ".bin", "tsx");
+  const r = spawnSync(bin, ["scripts/seed-demo.ts", file], {
     stdio: "inherit",
     env: process.env,
   });
