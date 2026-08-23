@@ -75,16 +75,35 @@ export function WorkShell({
         />
 
         <div className="mx-auto w-full max-w-[1500px] px-6 pt-8 sm:px-10">
-          {/* 标题还是留在深色块里——反色区是视觉规范里定的层次手段 */}
-          <div
-            className="flex w-full flex-col rounded-lg px-7 py-6 sm:px-9 sm:py-7"
-            style={{ background: "var(--ink)" }}
-          >
-            <p className="font-mono text-meta uppercase tracking-[0.14em] text-white/60">
-              {meta}
-            </p>
-            <h1 className="mt-1 font-serif text-title text-white">{title}</h1>
-            <p className="mt-1.5 text-meta leading-relaxed text-white/70">{subtitle}</p>
+          {/* 标题条用同一张图，取中间那段。
+              上面压一层靛蓝罩子——反色区是视觉规范里定的层次手段，
+              图直接铺白字会花，罩子既保留了图的质感又保住了对比度 */}
+          <div className="relative w-full overflow-hidden rounded-lg">
+            <Image
+              src={image}
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover object-center"
+              priority
+            />
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                background: `linear-gradient(90deg,
+                  color-mix(in srgb, var(--ink) 92%, transparent) 0%,
+                  color-mix(in srgb, var(--ink) 86%, transparent) 55%,
+                  color-mix(in srgb, var(--ink) 68%, transparent) 100%)`,
+              }}
+            />
+            <div className="relative flex flex-col px-7 py-6 sm:px-9 sm:py-7">
+              <p className="font-mono text-meta uppercase tracking-[0.14em] text-white/60">
+                {meta}
+              </p>
+              <h1 className="mt-1 font-serif text-title text-white">{title}</h1>
+              <p className="mt-1.5 text-meta leading-relaxed text-white/70">{subtitle}</p>
+            </div>
           </div>
         </div>
 
