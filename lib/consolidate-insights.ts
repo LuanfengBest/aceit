@@ -171,7 +171,11 @@ const QT_SYSTEM = `把面试题归到两级分类里。
 - "意图识别与实体识别有什么区别" → Technical Foundations / Agent & Intent
   （考原理，不绑业务场景）
 - "AI导购怎么衡量成功" → AI Application / Shopping & Guide
-  （绑在导购这个业务域上）
+- "AI导购上线后 CTR 提升20% 但 GMV 没增长，可能是什么原因" →
+  AI Application / Shopping & Guide
+  （考的是指标推理，但题锚在导购这个业务域上，**先看业务域**）
+- "如何设计一个电商大促的增长策略" → Business & Metrics / Growth & Conversion
+  （没点名任何 AI 场景，才归 Business & Metrics）
 - "介绍一个你负责的AI项目" → Experience & Behavior / Project Deep-dive
 - "怎么防止模型输出违规内容" → Safety & Governance / Content Risk
 

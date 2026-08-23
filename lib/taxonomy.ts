@@ -32,7 +32,11 @@ export const CANONICAL_L1: L1Def[] = [
   },
   {
     name: "AI Application",
-    hint: "考在具体业务里怎么设计 AI 产品。按业务域分二级，不按技术点分。",
+    hint:
+      "题里锚定了某个 AI 业务域（导购、搜索推荐、内容生成……）就归这里，" +
+      "**不管它考的是指标、设计还是技术**。" +
+      "「AI导购上线后 CTR 涨了 GMV 没涨怎么分析」考的是指标，但它是一道导购题，归这里，" +
+      "不要因为它问指标就丢给 Business & Metrics。按业务域分二级，不按技术点分。",
     seeds: [
       "Shopping & Guide",
       "Search & Recommendation",
@@ -43,7 +47,10 @@ export const CANONICAL_L1: L1Def[] = [
   },
   {
     name: "Business & Metrics",
-    hint: "考业务判断和数据：指标怎么定、增长怎么做、怎么算账。",
+    hint:
+      "考业务判断和数据，但**没有锚定某个 AI 业务域**的题才归这里：" +
+      "通用的电商指标、增长、商业化、行业竞争。" +
+      "只要题里点名了导购/搜索/生成这类 AI 场景，就归 AI Application。",
     seeds: ["E-commerce Metrics", "Growth & Conversion", "Monetization", "Market & Competition"],
   },
   {
