@@ -100,22 +100,31 @@ export function StudioBoard({
     return [
       {
         key: "universal",
-        label: "Asked everywhere",
-        hint: "自我介绍、经历深挖、协作冲突。切岗位时这一组不变，打磨一次到处能用",
+        label: "通用题",
+        sub: "Asked in every interview",
+        hint: "自我介绍、经历深挖、协作冲突。**切岗位时这一组不变**，打磨一次到处能用。",
+        tone: "lavender" as const,
+        pinned: true,
         rows: pick("universal"),
       },
       {
         key: "role",
-        label: activeRole ? `${activeRole.title} 专属` : "Role-specific",
+        label: "岗位专属",
+        sub: activeRole ? activeRole.title : "Role-specific",
         hint: activeRole?.domain
-          ? `绑定业务域：${activeRole.domain}。换个方向就不问了`
-          : "这份 JD 点名的场景和技术栈",
+          ? `绑定业务域：${activeRole.domain}。**切岗位这一组会整个换掉。**`
+          : "这份 JD 点名的场景和技术栈。**切岗位这一组会整个换掉。**",
+        tone: "peach" as const,
+        pinned: false,
         rows: pick("role"),
       },
       {
         key: "wild",
-        label: "From the wild",
-        hint: "面经里别人真被问过的领域题，还没归到任何岗位下",
+        label: "面经里的领域题",
+        sub: "From the wild",
+        hint: "别人真被问过、但还没归到任何岗位画像下的领域题。",
+        tone: "mint" as const,
+        pinned: false,
         rows: pick("wild"),
       },
     ].filter((g) => g.rows.length > 0);
@@ -355,13 +364,77 @@ export function StudioBoard({
           {/* ── 题目队列 ── */}
           <div className="space-y-4 lg:max-h-[calc(100vh-16rem)] lg:overflow-y-auto lg:pr-1">
             {groups.map((g) => (
-              <div key={g.key}>
-                <div className="mb-1.5">
-                  <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
-                    {g.label}
-                  </p>
+              <div
+                key={g.key}
+                className={`rounded-xl border-l-4 pl-3 ${
+                  g.tone === "lavender"
+                    ? "border-lavender-ink/45"
+                    : g.tone === "peach"
+                      ? "border-peach-ink/45"
+                      : "border-mint-ink/45"
+                }`}
+              >
+                <div
+                  className={`mb-2 rounded-lg px-3 py-2.5 ${
+                    g.tone === "lavender"
+                      ? "bg-lavender"
+                      : g.tone === "peach"
+                        ? "bg-peach"
+                        : "bg-mint"
+                  }`}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <p
+                      className={`text-section ${
+                        g.tone === "lavender"
+                          ? "text-lavender-ink"
+                          : g.tone === "peach"
+                            ? "text-peach-ink"
+                            : "text-mint-ink"
+                      }`}
+                    >
+                      {g.label}
+                    </p>
+                    {g.pinned && (
+                      <span className="rounded-pill border border-lavender-ink/35 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-lavender-ink">
+                        pinned
+                      </span>
+                    )}
+                    <span
+                      className={`font-mono text-[11px] uppercase tracking-[0.1em] opacity-70 ${
+                        g.tone === "lavender"
+                          ? "text-lavender-ink"
+                          : g.tone === "peach"
+                            ? "text-peach-ink"
+                            : "text-mint-ink"
+                      }`}
+                    >
+                      {g.sub}
+                    </span>
+                    <span
+                      className={`ml-auto font-mono text-meta ${
+                        g.tone === "lavender"
+                          ? "text-lavender-ink"
+                          : g.tone === "peach"
+                            ? "text-peach-ink"
+                            : "text-mint-ink"
+                      }`}
+                    >
+                      {g.rows.length}
+                    </span>
+                  </div>
                   {g.hint && (
-                    <p className="mt-0.5 text-[12px] text-muted-foreground">{g.hint}</p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
+                      {g.hint.split("**").map((part, i) =>
+                        i % 2 === 1 ? (
+                          <strong key={i} className="font-semibold text-foreground">
+                            {part}
+                          </strong>
+                        ) : (
+                          <span key={i}>{part}</span>
+                        )
+                      )}
+                    </p>
                   )}
                 </div>
                 <ul className="space-y-1.5">

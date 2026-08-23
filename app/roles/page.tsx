@@ -1,6 +1,6 @@
-import { desc } from "drizzle-orm";
+import { asc, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { roleProfiles, experiences } from "@/lib/db/schema";
+import { roleProfiles, roleJds, experiences } from "@/lib/db/schema";
 import { JdInput } from "@/components/roles/jd-input";
 import { RoleCard } from "@/components/roles/role-card";
 import { WorkShell } from "@/components/work-shell";
@@ -12,6 +12,14 @@ export default async function RolesPage() {
     .select()
     .from(roleProfiles)
     .orderBy(desc(roleProfiles.createdAt), desc(roleProfiles.id))
+    .all();
+
+  // 每个画像底下挂的 JD 原文。聚合只合画像，原文一份不动——
+  // 回头要核对某家具体怎么写的，还得看原文
+  const allJds = db
+    .select()
+    .from(roleJds)
+    .orderBy(asc(roleJds.id))
     .all();
 
   // 把岗位关键词和素材里的标签对一下，看哪些要求还没有经历支撑
@@ -36,7 +44,9 @@ export default async function RolesPage() {
         <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
           Paste a job description
         </p>
-        <p className="font-mono text-meta text-muted-foreground">{roles.length} roles</p>
+        <p className="font-mono text-meta text-muted-foreground">
+          {roles.length} profiles · {allJds.length} JDs
+        </p>
       </div>
 
       <JdInput />
@@ -54,6 +64,14 @@ export default async function RolesPage() {
               matchedKeywords={(JSON.parse(role.keywords) as string[]).filter((k) =>
                 myTags.has(k)
               )}
+              jds={allJds
+                .filter((j) => j.roleId === role.id)
+                .map((j) => ({
+                  id: j.id,
+                  company: j.company,
+                  title: j.title,
+                  rawJd: j.rawJd,
+                }))}
             />
           ))
         )}
