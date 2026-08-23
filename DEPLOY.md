@@ -44,13 +44,35 @@ npx tsx scripts/seed-demo.ts data/demo.db
 **没有**被打包进部署产物——`.gitignore` 里已经排除了 `data/`，
 demo.db 要单独在构建时生成或手动上传。
 
-## 部署步骤（以 Railway 为例）
+## 部署步骤（Railway）
 
-1. 连仓库，Build 命令 `npm run build`，Start 命令 `npm start`
-2. 加一块持久磁盘，挂到 `/app/data`
-3. 设上面那几个环境变量
-4. 首次部署后在容器里跑一次 seed：
-   `npx tsx scripts/seed-demo.ts data/demo.db`
+仓库里已经放好 `railway.json` 和 `nixpacks.toml`，构建和启动命令
+不用自己填。
+
+1. railway.app 用 GitHub 登录，New Project → Deploy from GitHub repo，
+   选这个仓库
+2. Variables 里加上面那几个环境变量（`ANTHROPIC_API_KEY` 是你自己的）
+3. Settings → Networking → Generate Domain，拿到公网链接
+4. 等构建完成，打开链接
+
+**第一次启动会自己造演示库**（`scripts/ensure-demo-db.mjs`），
+不用手动跑 seed。
+
+要让访客的数据在重新部署后还留着，再加一块 Volume 挂到 `/app/data`；
+不加也能跑，只是每次部署库会重建成初始状态——对演示站来说这反而省事。
+
+## 花多少钱
+
+两笔分开看：
+
+- **主机**：Railway 每月送 5 美元额度。一个 Next 进程 + 一个 SQLite 文件很轻，
+  大概率在免费额度内
+- **模型**：访客每点一次「出题」都在花你的 Anthropic 余额。
+  全站每天 800 点、全用 Haiku 的话，**每天上限大约几毛到一块钱**，
+  而且要真有人跑满才到得了
+
+嫌贵就把 `DEMO_GLOBAL_DAILY_CALLS` 调小。或者干脆不设
+`ANTHROPIC_API_KEY`——那样浏览和查看全都正常，只是点「出题」会报错。
 
 ## 演示库会被访客改脏
 

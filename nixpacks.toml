@@ -1,0 +1,4 @@
+# ffmpeg 装上：视频类功能虽然演示站关了，
+# 但装着不费事，将来想开就不用重配
+[phases.setup]
+nixPkgs = ["nodejs_20", "ffmpeg"]
