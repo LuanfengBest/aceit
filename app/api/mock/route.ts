@@ -1,28 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  experiences,
-  mockSessions,
-  mockTurns,
-  questions,
-  roleJds,
-  roleProfiles,
-} from "@/lib/db/schema";
+import { mockSessions, mockTurns, roleJds, roleProfiles } from "@/lib/db/schema";
 import { routeJd, shapeRole } from "@/lib/aggregate-roles";
-import { nextTurn, type MockContext } from "@/lib/mock-interview";
+import { buildContext, nextTurn } from "@/lib/mock-interview";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-
-const list = (raw: string) => {
-  try {
-    const v = JSON.parse(raw || "[]");
-    return Array.isArray(v) ? (v as string[]) : [];
-  } catch {
-    return [];
-  }
-};
 
 /**
  * 开一场模拟面试。
@@ -133,53 +117,4 @@ export async function POST(req: NextRequest) {
       { status: 502 }
     );
   }
-}
-
-export async function buildContext(
-  sessionId: number,
-  role: typeof roleProfiles.$inferSelect | null,
-  rawJd: string | null
-): Promise<MockContext> {
-  const exps = db.select().from(experiences).all();
-  const wild = db
-    .select({ text: questions.text })
-    .from(questions)
-    .where(
-      and(
-        eq(questions.source, "inbox"),
-        isNull(questions.mergedInto),
-        isNull(questions.parentId)
-      )
-    )
-    .all()
-    .map((q) => q.text);
-
-  const history = db
-    .select({ role: mockTurns.role, content: mockTurns.content })
-    .from(mockTurns)
-    .where(eq(mockTurns.sessionId, sessionId))
-    .orderBy(mockTurns.seq)
-    .all();
-
-  return {
-    role: role
-      ? {
-          title: role.title,
-          kind: role.kind,
-          domain: role.domain,
-          responsibilities: list(role.responsibilities),
-          requirements: list(role.requirements),
-          keywords: list(role.keywords),
-          variance: list(role.variance),
-        }
-      : null,
-    rawJd,
-    experiences: exps.map((e) => ({
-      title: e.title,
-      summary: e.summary ?? "",
-      detail: e.detail ?? "",
-    })),
-    wildQuestions: wild,
-    history,
-  };
 }

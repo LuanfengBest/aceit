@@ -46,7 +46,6 @@ function getRecognition(): SpeechRecognitionLike | null {
 
 export function MockInterview({ roles }: { roles: { id: number; title: string }[] }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [jd, setJd] = useState("");
   const [roleId, setRoleId] = useState<number | "new">(roles[0]?.id ?? "new");
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -192,29 +191,11 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
     setListening(false);
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mb-4 w-full rounded-lg border border-dashed border-accent/50 bg-accent-soft/40 px-5 py-3.5 text-left transition-colors hover:border-accent"
-      >
-        <p className="font-mono text-meta uppercase tracking-[0.12em] text-accent">
-          Mock interview
-        </p>
-        <p className="mt-1 text-meta text-muted-foreground">
-          粘一份 JD 直接开面 —— 面试官顺着你的回答临场追问，
-          结束后这一场问过的题会沉淀回题库。
-        </p>
-      </button>
-    );
-  }
-
   return (
-    <div className="mb-4 rounded-lg border border-accent/40 bg-surface">
+    <div className="rounded-lg border border-border bg-surface">
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
-        <p className="font-mono text-meta uppercase tracking-[0.12em] text-accent">
-          Mock interview
+        <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+          Live session
         </p>
         {roleTitle && (
           <span className="rounded-pill bg-accent-soft px-2.5 py-0.5 text-meta text-accent">
@@ -234,23 +215,12 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
               type="button"
               disabled={busy !== null}
               onClick={() => void end()}
-              className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+              className="ml-auto rounded-md border border-border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
             >
               {busy === "end" ? "沉淀中…" : "结束并沉淀"}
             </button>
           </>
         )}
-        <button
-          type="button"
-          onClick={() => {
-            stopListening();
-            window.speechSynthesis?.cancel();
-            setOpen(false);
-          }}
-          className="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
-        >
-          收起
-        </button>
       </div>
 
       {sessionId === null ? (
@@ -294,7 +264,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
         </div>
       ) : (
         <>
-          <div ref={feedRef} className="max-h-[26rem] space-y-3 overflow-y-auto px-5 py-4">
+          <div ref={feedRef} className="max-h-[34rem] space-y-3 overflow-y-auto px-5 py-4">
             {turns.map((t, i) => (
               <div
                 key={i}

@@ -1,4 +1,16 @@
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { experiences, mockTurns, questions, type RoleProfile } from "@/lib/db/schema";
 import { callLLM, callLLMObject } from "@/lib/llm";
+
+const list = (raw: string) => {
+  try {
+    const v = JSON.parse(raw || "[]");
+    return Array.isArray(v) ? (v as string[]) : [];
+  } catch {
+    return [];
+  }
+};
 
 /**
  * 模拟面试的对话。
@@ -200,4 +212,54 @@ export async function harvestQuestions(
     ...row,
     follows: rawFollows !== null ? (map.get(rawFollows) ?? null) : null,
   }));
+}
+
+/** 把这一场的上下文攒齐：岗位、经历库、面经参照、已经问过的轮次 */
+export async function buildContext(
+  sessionId: number,
+  role: RoleProfile | null,
+  rawJd: string | null
+): Promise<MockContext> {
+  const exps = db.select().from(experiences).all();
+  const wild = db
+    .select({ text: questions.text })
+    .from(questions)
+    .where(
+      and(
+        eq(questions.source, "inbox"),
+        isNull(questions.mergedInto),
+        isNull(questions.parentId)
+      )
+    )
+    .all()
+    .map((q) => q.text);
+
+  const history = db
+    .select({ role: mockTurns.role, content: mockTurns.content })
+    .from(mockTurns)
+    .where(eq(mockTurns.sessionId, sessionId))
+    .orderBy(mockTurns.seq)
+    .all();
+
+  return {
+    role: role
+      ? {
+          title: role.title,
+          kind: role.kind,
+          domain: role.domain,
+          responsibilities: list(role.responsibilities),
+          requirements: list(role.requirements),
+          keywords: list(role.keywords),
+          variance: list(role.variance),
+        }
+      : null,
+    rawJd,
+    experiences: exps.map((e) => ({
+      title: e.title,
+      summary: e.summary ?? "",
+      detail: e.detail ?? "",
+    })),
+    wildQuestions: wild,
+    history,
+  };
 }

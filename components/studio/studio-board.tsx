@@ -65,19 +65,17 @@ export function StudioBoard({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [instruction, setInstruction] = useState("");
-  // 连击模式：主问题答完直接问追问，不停下来评点，更像真实面试
-  const [chain, setChain] = useState(false);
-  const [chainStep, setChainStep] = useState(0);
+  /**
+   * 两种练法，不是一个页面里的开关，是两件不同的事：
+   * practice —— 逐题打磨。题从库里来，一道一道抠，留版本链
+   * mock     —— 模拟一整场。面试官顺着你的回答临场追问，走到哪儿算哪儿
+   */
+  const [mode, setMode] = useState<"practice" | "mock">("practice");
   const [kindFilter, setKindFilter] = useState<Set<string>>(new Set());
 
   const current = items.find((i) => i.question.id === selected) ?? items[0] ?? null;
 
-  // 连击模式下，当前该问的是主问题还是第几条追问
-  const chainQuestions = useMemo(() => {
-    if (!current) return [];
-    return [current.question, ...current.followUps.map((f) => f.question)];
-  }, [current]);
-  const asking = chain ? (chainQuestions[chainStep] ?? current?.question) : current?.question;
+  const asking = current?.question;
 
   const askingAnswers =
     asking && current
@@ -187,8 +185,60 @@ export function StudioBoard({
 
   return (
     <>
-      {/* ── 对话式模拟面试：题库练已知的题，这里发现没准备到的题 ── */}
-      <MockInterview roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
+      {/* ── 两种练法 ── */}
+      <div className="mb-5 grid gap-2 sm:grid-cols-2">
+        {(
+          [
+            {
+              key: "practice" as const,
+              title: "逐题打磨",
+              sub: "Practice the questions",
+              desc: "题从库里来，一道一道抠。每次开口都留一版，能听出哪版更好。",
+            },
+            {
+              key: "mock" as const,
+              title: "模拟面试",
+              sub: "Mock interview",
+              desc: "给一份 JD 或选个岗位，连着问一整场。面试官顺着你的回答追问。",
+            },
+          ]
+        ).map((m) => {
+          const on = mode === m.key;
+          return (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setMode(m.key)}
+              className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                on
+                  ? "border-accent bg-accent-soft"
+                  : "border-border bg-surface hover:border-accent"
+              }`}
+            >
+              <div className="flex items-baseline gap-2">
+                <span className={`text-section ${on ? "text-accent" : "text-foreground"}`}>
+                  {m.title}
+                </span>
+                <span
+                  className={`font-mono text-[11px] uppercase tracking-[0.1em] ${
+                    on ? "text-accent/70" : "text-muted-foreground"
+                  }`}
+                >
+                  {m.sub}
+                </span>
+              </div>
+              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                {m.desc}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "mock" ? (
+        <MockInterview roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
+      ) : (
+        <>
 
       {/* ── 岗位切换 + 出题 ── */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -274,42 +324,10 @@ export function StudioBoard({
         </div>
       )}
 
-      {/* ── Session 设置 ── */}
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-2 px-4 py-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-2 px-4 py-2.5">
         <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
-          Session
+          Progress
         </p>
-        <div className="flex items-center gap-1">
-          {[
-            {
-              on: false,
-              label: "逐题",
-              hint: "答一题，立刻评点，改完再答下一题。适合打磨单题",
-            },
-            {
-              on: true,
-              label: "连击",
-              hint: "主问题答完直接进追问，像真实面试一样被一路追着问",
-            },
-          ].map((m) => (
-            <button
-              key={m.label}
-              type="button"
-              title={m.hint}
-              onClick={() => {
-                setChain(m.on);
-                setChainStep(0);
-              }}
-              className={`rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors ${
-                chain === m.on
-                  ? "border-accent bg-accent-soft text-accent"
-                  : "border-border text-muted-foreground hover:border-accent hover:text-accent"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
         <p className="ml-auto font-mono text-meta text-muted-foreground">
           {stats.keeper} locked · {stats.draft} in progress · {stats.total} total
         </p>
@@ -452,7 +470,6 @@ export function StudioBoard({
                           type="button"
                           onClick={() => {
                             setSelected(question.id);
-                            setChainStep(0);
                           }}
                           className={`w-full rounded-lg border p-3.5 text-left transition-colors ${
                             active
@@ -504,34 +521,8 @@ export function StudioBoard({
           {/* ── 练习台 ── */}
           {current && asking && (
             <div className="space-y-5">
-              {chain && chainQuestions.length > 1 && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2 px-4 py-2.5">
-                  <p className="font-mono text-meta uppercase tracking-[0.1em] text-muted-foreground">
-                    Chain {chainStep + 1}/{chainQuestions.length}
-                  </p>
-                  <div className="ml-auto flex gap-1">
-                    <button
-                      type="button"
-                      disabled={chainStep === 0}
-                      onClick={() => setChainStep((s) => s - 1)}
-                      className="rounded-md border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-35"
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      disabled={chainStep >= chainQuestions.length - 1}
-                      onClick={() => setChainStep((s) => s + 1)}
-                      className="rounded-md border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-35"
-                    >
-                      下一个追问 →
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* 复用提示：同 cluster 已经有定稿 */}
-              {!chain && current.reusable && (
+              {current.reusable && (
                 <div className="rounded-lg border border-lemon bg-lemon/30 px-4 py-3">
                   <p className="font-mono text-meta uppercase tracking-[0.1em] text-lemon-ink">
                     You already answered this one
@@ -680,6 +671,8 @@ export function StudioBoard({
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </>
   );

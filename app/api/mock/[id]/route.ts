@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { mockSessions, mockTurns, questions, roleProfiles } from "@/lib/db/schema";
-import { harvestQuestions, nextTurn } from "@/lib/mock-interview";
-import { buildContext } from "../route";
+import { buildContext, harvestQuestions, nextTurn } from "@/lib/mock-interview";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
