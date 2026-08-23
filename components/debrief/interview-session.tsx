@@ -148,13 +148,37 @@ export function InterviewSession({
       const chunks: Blob[] = [];
       full.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
 
-      // 提词：只切标签页那一路。混流里有你自己的声音，
-      // 会被当成新问题，所以单独开一个录制器
-      let live: MediaRecorder | null = null;
-      if (tabAudio) {
-        live = new MediaRecorder(new MediaStream([tabAudio]));
-        live.ondataavailable = (e) => void handleChunk(e.data);
-      }
+      /**
+       * 提词：只切标签页那一路。混流里有你自己的声音，
+       * 会被当成新问题，所以单独走一路。
+       *
+       * 这里**不能**用 MediaRecorder 的 timeslice：
+       * 那样只有第一段带 webm 容器头，后面全是裸片段，
+       * ffmpeg 一句 "EBML header parsing failed" 就退出——
+       * 表现是第一段正常转写，之后再也不出东西，而且是静默的。
+       * 改成每段单独起停一个录制器，每段自成一个完整文件。
+       */
+      let liveRec: MediaRecorder | null = null;
+      let liveTimer: ReturnType<typeof setTimeout> | null = null;
+      let liveOn = Boolean(tabAudio);
+
+      const cycle = () => {
+        if (!liveOn || !tabAudio) return;
+        const rec = new MediaRecorder(new MediaStream([tabAudio]));
+        const parts: Blob[] = [];
+        rec.ondataavailable = (e) => e.data.size > 0 && parts.push(e.data);
+        rec.onstop = () => {
+          if (parts.length > 0) {
+            void handleChunk(new Blob(parts, { type: "audio/webm" }));
+          }
+          cycle(); // 接着录下一段
+        };
+        rec.start();
+        liveRec = rec;
+        liveTimer = setTimeout(() => {
+          if (rec.state !== "inactive") rec.stop();
+        }, CHUNK_MS);
+      };
 
       let raf = 0;
       const tick = () => {
@@ -173,7 +197,9 @@ export function InterviewSession({
       full.onstop = async () => {
         cancelAnimationFrame(raf);
         clearInterval(timer);
-        live?.state !== "inactive" && live?.stop();
+        liveOn = false;
+        if (liveTimer) clearTimeout(liveTimer);
+        if (liveRec && liveRec.state !== "inactive") liveRec.stop();
         display.getTracks().forEach((t) => t.stop());
         mic.getTracks().forEach((t) => t.stop());
         void ctx.close();
@@ -184,7 +210,7 @@ export function InterviewSession({
       };
 
       full.start(1000);
-      live?.start(CHUNK_MS);
+      cycle();
       stopRef.current = () => full.stop();
       setSeconds(0);
       setPhase("live");
