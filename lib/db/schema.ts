@@ -304,3 +304,50 @@ export const roleJds = sqliteTable("role_jds", {
 
 export type RoleJd = typeof roleJds.$inferSelect;
 export type NewRoleJd = typeof roleJds.$inferInsert;
+
+/**
+ * 一场模拟面试。
+ *
+ * 和 Studio 的区别：Studio 是**打磨已知的题**，题从库里来；
+ * mock 是**发现你没准备到的题**——面试官顺着你的回答临场决定下一问，
+ * 走到哪儿算哪儿。这一场里冒出来的题会沉淀回题库，
+ * 下次在 Studio 里能接着练。
+ */
+export const mockSessions = sqliteTable("mock_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** 这场针对哪个岗位画像。粘 JD 开场时会自动建/并入一个画像 */
+  roleId: integer("role_id").references(() => roleProfiles.id, {
+    onDelete: "set null",
+  }),
+  title: text("title"),
+  /** 开场白里粘的 JD 原文，没粘就是 null */
+  rawJd: text("raw_jd"),
+  status: text("status", { enum: ["live", "ended"] }).notNull().default("live"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/** 一场里的一轮问答。面试官问什么由上一轮的回答决定，所以按顺序存 */
+export const mockTurns = sqliteTable("mock_turns", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: integer("session_id")
+    .notNull()
+    .references(() => mockSessions.id, { onDelete: "cascade" }),
+  seq: integer("seq").notNull(),
+  role: text("role", { enum: ["interviewer", "me"] }).notNull(),
+  content: text("content").notNull(),
+  /**
+   * 这一轮如果是面试官提问，且这道题被沉淀进了题库，
+   * 指向那道题。沉淀是 mock 的价值所在——问过就不会白问
+   */
+  questionId: integer("question_id").references(() => questions.id, {
+    onDelete: "set null",
+  }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type MockSession = typeof mockSessions.$inferSelect;
+export type MockTurn = typeof mockTurns.$inferSelect;

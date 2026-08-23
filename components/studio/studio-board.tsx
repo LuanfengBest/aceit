@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Answer, Question, RoleProfile } from "@/lib/db/schema";
 import { VoicePractice } from "@/components/studio/voice-practice";
+import { MockInterview } from "@/components/studio/mock-interview";
 
 export interface ReusableAnswer {
   answerId: number;
@@ -186,6 +187,9 @@ export function StudioBoard({
 
   return (
     <>
+      {/* ── 对话式模拟面试：题库练已知的题，这里发现没准备到的题 ── */}
+      <MockInterview roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
+
       {/* ── 岗位切换 + 出题 ── */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {roles.map((r) => (
