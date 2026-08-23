@@ -19,6 +19,8 @@ export interface DocRow {
 export interface FragmentRow {
   experience: Experience;
   filename: string | null;
+  /** 这条经历被问过几道题 */
+  asked: number;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -32,9 +34,12 @@ function formatDateTime(date: Date | null) {
 export function ProfileTabs({
   fragments,
   docs,
+  busiest,
 }: {
   fragments: FragmentRow[];
   docs: DocRow[];
+  /** 问得最多的那条有几道题，用来画相对长度 */
+  busiest: number;
 }) {
   const [tab, setTab] = useState<"fragments" | "docs">("fragments");
 
@@ -50,7 +55,7 @@ export function ProfileTabs({
       </div>
 
       {tab === "fragments" ? (
-        <FragmentList fragments={fragments} />
+        <FragmentList fragments={fragments} busiest={busiest} />
       ) : (
         <DocManager docs={docs} />
       )}
@@ -82,7 +87,13 @@ function TabButton({
   );
 }
 
-function FragmentList({ fragments }: { fragments: FragmentRow[] }) {
+function FragmentList({
+  fragments,
+  busiest,
+}: {
+  fragments: FragmentRow[];
+  busiest: number;
+}) {
   if (fragments.length === 0) {
     return (
       <p className="rounded-lg border border-border bg-surface px-5 py-10 text-center text-meta text-muted-foreground">
@@ -93,11 +104,13 @@ function FragmentList({ fragments }: { fragments: FragmentRow[] }) {
 
   return (
     <div className="space-y-3">
-      {fragments.map(({ experience, filename }) => (
+      {fragments.map(({ experience, filename, asked }) => (
         <ExperienceCard
           key={experience.id}
           experience={experience}
           source={filename ?? undefined}
+          asked={asked}
+          busiest={busiest}
         />
       ))}
     </div>

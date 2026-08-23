@@ -18,11 +18,20 @@ function parseTags(raw: string): string[] {
 export function ExperienceCard({
   experience,
   source,
+  asked,
+  busiest,
 }: {
   experience: Experience;
   source?: string;
+  /** 这条经历被问过几道题 */
+  asked: number;
+  /** 问得最多的那条有几道，用来画相对长度 */
+  busiest: number;
 }) {
   const router = useRouter();
+  // 不到最忙那条的四分之一就算薄。绝对数没意义——
+  // 题库总量会一直涨，看的是相对深浅
+  const thin = busiest > 0 && asked < Math.max(3, busiest * 0.25);
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -161,7 +170,34 @@ export function ExperienceCard({
   return (
     <article className="rounded-lg border border-border bg-surface p-5 transition-colors hover:border-text-muted/30">
       <div className="flex items-start justify-between gap-4">
-        <h3 className="text-section">{experience.title}</h3>
+        <div className="min-w-0">
+          <h3 className="text-section">{experience.title}</h3>
+          {/* 被问过多少。分布很不均——最多的 44 道，最少的 3 道，
+              薄的那几条在面试里最可能被问住 */}
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="h-1 w-28 overflow-hidden rounded-pill bg-surface-2">
+              <div
+                className={`h-full rounded-pill ${
+                  thin ? "bg-peach-ink/60" : "bg-mint-ink/55"
+                }`}
+                style={{
+                  width: `${busiest > 0 ? Math.max(4, (asked / busiest) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {asked} question{asked === 1 ? "" : "s"}
+            </span>
+            {thin && (
+              <a
+                href="/studio"
+                className="font-mono text-[11px] uppercase tracking-[0.08em] text-peach-ink underline decoration-peach-ink/40 underline-offset-4 transition-colors hover:decoration-peach-ink"
+              >
+                thin — ask for more
+              </a>
+            )}
+          </div>
+        </div>
         <div className="flex shrink-0 items-center gap-1">
           <CardAction onClick={() => setExpanded(!expanded)}>
             {expanded ? "收起" : "展开"}

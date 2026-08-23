@@ -1,0 +1,1 @@
+ALTER TABLE `questions` ADD `experience_ids` text DEFAULT '[]' NOT NULL;

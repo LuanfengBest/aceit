@@ -166,6 +166,14 @@ export const questions = sqliteTable("questions", {
   /** 一级分类。固定集合优先，模型可新建，见 lib/taxonomy.ts */
   topicL1: text("topic_l1"),
   /**
+   * 这道题在挖哪几条经历，JSON 数组存 experiences.id。
+   * 用来看覆盖：14 条经历里哪几段还没有人问过。
+   * 不在出题时让模型顺手填——三条出题路径（铺一批 / 补题 / mock 沉淀）
+   * 各改一遍容易漏，而且改了 prompt 存量题还是空的。
+   * 做成独立的一步，回填和增量用同一套。
+   */
+  experienceIds: text("experience_ids").notNull().default("[]"),
+  /**
    * universal：换个岗位也会问（为什么想做 AI PM、讲一个你做过的项目、经历深挖）。
    * domain：某个领域特有（AI 搜索的评测怎么设计）。
    * 分开是因为两者的复用方式不一样——universal 的定稿答案跨岗位直接拿来用，
