@@ -184,23 +184,56 @@ export async function POST() {
       }
     }
 
-    // 追问继承父级的两级分类
-    const taxoById = new Map(
-      db
-        .select({ id: questions.id, l1: questions.topicL1, l2: questions.topic })
-        .from(questions)
-        .where(and(eq(questions.source, "inbox"), isNull(questions.parentId)))
-        .all()
-        .map((r) => [r.id, { l1: r.l1, l2: r.l2 }] as const)
-    );
+    // 追问继承父级的两级分类。
+    // 得沿着父链一路往上找，不能只看一层：
+    // 追问底下还能挂追问（爷孙三级），只查 parent_id 为空的那批就漏了；
+    // 而主问题这轮如果被判成重复合并掉，它自己没有分类，
+    // 要跟着 merged_into 指向的那条留存的题走
+    const chain = db
+      .select({
+        id: questions.id,
+        parentId: questions.parentId,
+        mergedInto: questions.mergedInto,
+        l1: questions.topicL1,
+        l2: questions.topic,
+      })
+      .from(questions)
+      .where(eq(questions.source, "inbox"))
+      .all();
+    const byId = new Map(chain.map((r) => [r.id, r] as const));
+
+    const resolveTaxo = (
+      startId: number
+    ): { l1: string | null; l2: string | null } | null => {
+      let cursor: number | null = startId;
+      const seen = new Set<number>();
+      while (cursor !== null && !seen.has(cursor)) {
+        seen.add(cursor);
+        const row: (typeof chain)[number] | undefined = byId.get(cursor);
+        if (!row) return null;
+        if (row.mergedInto !== null) {
+          cursor = row.mergedInto;
+          continue;
+        }
+        if (row.l1) return { l1: row.l1, l2: row.l2 };
+        cursor = row.parentId;
+      }
+      return null;
+    };
+
     for (const q of allInbox) {
       if (q.parentId === null) continue;
-      const inherited = taxoById.get(q.parentId);
-      if (!inherited) continue;
+      const inherited = resolveTaxo(q.parentId);
+      if (!inherited?.l1) continue;
       db.update(questions)
         .set({ topicL1: inherited.l1, topic: inherited.l2 })
         .where(eq(questions.id, q.id))
         .run();
+      byId.set(q.id, {
+        ...byId.get(q.id)!,
+        l1: inherited.l1,
+        l2: inherited.l2,
+      });
     }
 
     // 挂在题上的答法跟着题走，playbook 里的按 kind 分组、不用主题
@@ -210,8 +243,8 @@ export async function POST() {
       .where(isNull(insights.mergedInto))
       .all()) {
       if (row.questionId === null) continue;
-      const t = taxoById.get(row.questionId);
-      if (!t) continue;
+      const t = resolveTaxo(row.questionId);
+      if (!t?.l1) continue;
       db.update(insights)
         .set({ topicL1: t.l1, topic: t.l2 })
         .where(eq(insights.id, row.id))
