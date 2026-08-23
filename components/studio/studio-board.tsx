@@ -25,6 +25,14 @@ export interface QuestionWithAnswers {
   followUps: { question: Question; answers: Answer[] }[];
 }
 
+const KIND_LABEL: Record<string, string> = {
+  behavioral: "Behaviour & experience",
+  technical: "Technical depth",
+  case: "Scenarios",
+  resume: "About your CV",
+  other: "Other",
+};
+
 const KIND_TONE: Record<string, string> = {
   behavioral: "bg-lavender text-lavender-ink",
   technical: "bg-mint text-mint-ink",
@@ -87,46 +95,56 @@ export function StudioBoard({
   const latest = versions[versions.length - 1] ?? null;
   const keeper = versions.find((v) => v.status === "keeper") ?? null;
 
-  // 队列按「跟不跟岗位走」分组，不是按 scope。
-  // 通用题切岗位时不动——投哪个岗都会问，重复练没意义
-  const groups = useMemo(() => {
-    const pick = (b: QuestionWithAnswers["bucket"]) =>
-      items.filter(
-        (i) =>
-          i.bucket === b &&
-          (kindFilter.size === 0 || kindFilter.has(i.question.kind))
-      );
+  /**
+   * 队列分两大块，块内再按标签细分：
+   * - 通用块按 kind 分（自我介绍那类行为题 / 技术题 / 场景题…），
+   *   这些标签是固定的，因为「问的是这个人」这件事不随岗位变
+   * - 岗位块按业务域标签分（AI导购 / AI搜索 / 内容生成…），
+   *   这些标签跟着你粘的 JD 走，换个岗位就换一批
+   */
+  const sections = useMemo(() => {
+    const match = (i: QuestionWithAnswers) =>
+      kindFilter.size === 0 || kindFilter.has(i.question.kind);
+
+    const universal = items.filter((i) => i.bucket === "universal" && match(i));
+    const roleSide = items.filter((i) => i.bucket !== "universal" && match(i));
+
+    const groupBy = (
+      rows: QuestionWithAnswers[],
+      key: (i: QuestionWithAnswers) => string
+    ) => {
+      const m = new Map<string, QuestionWithAnswers[]>();
+      for (const r of rows) {
+        const k = key(r);
+        m.set(k, [...(m.get(k) ?? []), r]);
+      }
+      return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+    };
+
     return [
       {
         key: "universal",
-        label: "通用题",
-        sub: "Asked in every interview",
-        hint: "自我介绍、经历深挖、协作冲突。**切岗位时这一组不变**，打磨一次到处能用。",
+        title: "Asked in every interview",
+        note: "Polish these once — they carry over to every role you apply to.",
         tone: "lavender" as const,
         pinned: true,
-        rows: pick("universal"),
+        total: universal.length,
+        // 通用题按题型分：这些标签不随岗位变
+        groups: groupBy(universal, (i) => KIND_LABEL[i.question.kind] ?? "Other"),
       },
       {
         key: "role",
-        label: "岗位专属",
-        sub: activeRole ? activeRole.title : "Role-specific",
-        hint: activeRole?.domain
-          ? `绑定业务域：${activeRole.domain}。**切岗位这一组会整个换掉。**`
-          : "这份 JD 点名的场景和技术栈。**切岗位这一组会整个换掉。**",
+        title: activeRole ? activeRole.title : "Role-specific",
+        note: activeRole?.domain
+          ? `Tied to ${activeRole.domain}. Switch roles and this whole block changes.`
+          : "Everything this JD names. Switch roles and this whole block changes.",
         tone: "peach" as const,
         pinned: false,
-        rows: pick("role"),
+        total: roleSide.length,
+        // 岗位题按业务域分：标签跟着 JD 走
+        groups: groupBy(roleSide, (i) => i.question.topic ?? "Unsorted"),
       },
-      {
-        key: "wild",
-        label: "面经里的领域题",
-        sub: "From the wild",
-        hint: "别人真被问过、但还没归到任何岗位画像下的领域题。",
-        tone: "mint" as const,
-        pinned: false,
-        rows: pick("wild"),
-      },
-    ].filter((g) => g.rows.length > 0);
+    ].filter((sec) => sec.total > 0);
   }, [items, activeRole, kindFilter]);
 
   const stats = useMemo(() => {
@@ -177,7 +195,7 @@ export function StudioBoard({
       {
         questionId: current.question.id,
         content: current.reusable.content,
-        note: `复用自「${current.reusable.fromQuestionText}」的定稿`,
+        note: `Reused from the locked answer to "${current.reusable.fromQuestionText}"`,
       },
       "adopt"
     );
@@ -191,15 +209,15 @@ export function StudioBoard({
           [
             {
               key: "practice" as const,
-              title: "逐题打磨",
-              sub: "Practice the questions",
-              desc: "题从库里来，一道一道抠。每次开口都留一版，能听出哪版更好。",
+              title: "Practice",
+              sub: "One question at a time",
+              desc: "Questions from your bank. Every take is kept, so you can hear which version was better.",
             },
             {
               key: "mock" as const,
-              title: "模拟面试",
-              sub: "Mock interview",
-              desc: "给一份 JD 或选个岗位，连着问一整场。面试官顺着你的回答追问。",
+              title: "Mock interview",
+              sub: "A full session, start to finish",
+              desc: "Paste a JD or pick a role. The interviewer follows your answers and digs in.",
             },
           ]
         ).map((m) => {
@@ -260,20 +278,20 @@ export function StudioBoard({
           <button
             type="button"
             disabled={busy !== null}
-            title="出跨岗位都会问的题，不绑任何岗位"
+            title="Questions every interview asks — not tied to any role"
             onClick={() => void post("/api/questions/generate", {}, "gen-uni")}
             className="rounded-md border border-border px-3 py-1.5 text-meta text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
           >
-            {busy === "gen-uni" ? "出通用题…" : "出通用题"}
+            {busy === "gen-uni" ? "Writing…" : "Write universal set"}
           </button>
           <button
             type="button"
             disabled={busy !== null || !activeRoleId}
-            title="只出这个岗位/业务域专属的题"
+            title="Only what this role and its domain will ask"
             onClick={() => void post("/api/questions/generate", { roleId: activeRoleId }, "gen")}
             className="rounded-md bg-accent px-3 py-1.5 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy === "gen" ? "出岗位题…" : "出本岗位的题"}
+            {busy === "gen" ? "Writing…" : "Write role set"}
           </button>
         </div>
       </div>
@@ -294,7 +312,7 @@ export function StudioBoard({
               href="/roles"
               className="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
             >
-              JD 原文 →
+              Source JDs →
             </a>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -310,7 +328,7 @@ export function StudioBoard({
           {(JSON.parse(activeRole.variance || "[]") as string[]).length > 0 && (
             <details className="mt-2.5">
               <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent">
-                各家的差异点
+                Where the JDs differ
               </summary>
               <ul className="mt-1.5 space-y-1">
                 {(JSON.parse(activeRole.variance || "[]") as string[]).map((v) => (
@@ -368,7 +386,7 @@ export function StudioBoard({
             onClick={() => setKindFilter(new Set())}
             className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
           >
-            清除
+            Clear
           </button>
         )}
       </div>
@@ -385,137 +403,108 @@ export function StudioBoard({
         <div className="grid gap-5 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
           {/* ── 题目队列 ── */}
           <div className="space-y-4 lg:max-h-[calc(100vh-16rem)] lg:overflow-y-auto lg:pr-1">
-            {groups.map((g) => (
-              <div
-                key={g.key}
-                className={`rounded-xl border-l-4 pl-3 ${
-                  g.tone === "lavender"
-                    ? "border-lavender-ink/45"
-                    : g.tone === "peach"
-                      ? "border-peach-ink/45"
-                      : "border-mint-ink/45"
-                }`}
-              >
-                <div
-                  className={`mb-2 rounded-lg px-3 py-2.5 ${
-                    g.tone === "lavender"
-                      ? "bg-lavender"
-                      : g.tone === "peach"
-                        ? "bg-peach"
-                        : "bg-mint"
-                  }`}
-                >
-                  <div className="flex items-baseline gap-2">
-                    <p
-                      className={`text-section ${
-                        g.tone === "lavender"
-                          ? "text-lavender-ink"
-                          : g.tone === "peach"
-                            ? "text-peach-ink"
-                            : "text-mint-ink"
-                      }`}
-                    >
-                      {g.label}
-                    </p>
-                    {g.pinned && (
-                      <span className="rounded-pill border border-lavender-ink/35 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-lavender-ink">
-                        pinned
-                      </span>
-                    )}
-                    <span
-                      className={`font-mono text-[11px] uppercase tracking-[0.1em] opacity-70 ${
-                        g.tone === "lavender"
-                          ? "text-lavender-ink"
-                          : g.tone === "peach"
-                            ? "text-peach-ink"
-                            : "text-mint-ink"
-                      }`}
-                    >
-                      {g.sub}
-                    </span>
-                    <span
-                      className={`ml-auto font-mono text-meta ${
-                        g.tone === "lavender"
-                          ? "text-lavender-ink"
-                          : g.tone === "peach"
-                            ? "text-peach-ink"
-                            : "text-mint-ink"
-                      }`}
-                    >
-                      {g.rows.length}
-                    </span>
-                  </div>
-                  {g.hint && (
-                    <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
-                      {g.hint.split("**").map((part, i) =>
-                        i % 2 === 1 ? (
-                          <strong key={i} className="font-semibold text-foreground">
-                            {part}
-                          </strong>
-                        ) : (
-                          <span key={i}>{part}</span>
-                        )
-                      )}
-                    </p>
-                  )}
-                </div>
-                <ul className="space-y-1.5">
-                  {g.rows.map(({ question, answers: rows, followUps, reusable }) => {
-                    const active = question.id === current?.question.id;
-                    const p = progressOf(rows);
-                    const mark = PROGRESS_MARK[p];
-                    return (
-                      <li key={question.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelected(question.id);
-                          }}
-                          className={`w-full rounded-lg border p-3.5 text-left transition-colors ${
-                            active
-                              ? "border-accent bg-accent-soft"
-                              : "border-border bg-surface hover:border-accent"
-                          }`}
+            {sections.map((sec) => {
+              const ink =
+                sec.tone === "lavender" ? "text-lavender-ink" : "text-peach-ink";
+              const bg = sec.tone === "lavender" ? "bg-lavender" : "bg-peach";
+              const edge =
+                sec.tone === "lavender"
+                  ? "border-lavender-ink/40"
+                  : "border-peach-ink/40";
+              return (
+                <section key={sec.key} className={`rounded-xl border-l-4 pl-3 ${edge}`}>
+                  <div className={`mb-2 rounded-lg px-3.5 py-3 ${bg}`}>
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <p className={`text-section ${ink}`}>{sec.title}</p>
+                      {sec.pinned && (
+                        <span
+                          className={`rounded-pill border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] ${ink} ${edge}`}
                         >
-                          <div className="flex items-start gap-2">
-                            <span className={`shrink-0 ${mark.tone}`} title={mark.label}>
-                              {mark.mark}
-                            </span>
-                            <span className="min-w-0 text-meta text-foreground">
-                              {question.text}
-                            </span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            <span
-                              className={`rounded-pill px-2 py-0.5 font-mono text-[11px] ${
-                                KIND_TONE[question.kind] ?? KIND_TONE.other
-                              }`}
-                            >
-                              {question.kind}
-                            </span>
-                            {followUps.length > 0 && (
-                              <span className="font-mono text-[11px] text-muted-foreground">
-                                +{followUps.length} follow-ups
-                              </span>
-                            )}
-                            {reusable && (
-                              <span className="rounded-pill bg-lemon px-2 py-0.5 font-mono text-[11px] text-lemon-ink">
-                                reusable
-                              </span>
-                            )}
-                            {rows.length > 0 && (
-                              <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-                                v{Math.max(...rows.map((a) => a.version))}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
+                          pinned
+                        </span>
+                      )}
+                      <span className={`ml-auto font-mono text-meta ${ink}`}>
+                        {sec.total}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
+                      {sec.note}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {sec.groups.map(([tag, rows]) => (
+                      <div key={tag}>
+                        <div className="mb-1 flex items-baseline gap-2 px-0.5">
+                          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+                            {tag}
+                          </span>
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {rows.length}
+                          </span>
+                        </div>
+                        <ul className="space-y-1.5">
+                          {rows.map(({ question, answers: rowAnswers, followUps, reusable }) => {
+                            const active = question.id === current?.question.id;
+                            const p = progressOf(rowAnswers);
+                            const mark = PROGRESS_MARK[p];
+                            return (
+                              <li key={question.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelected(question.id)}
+                                  className={`w-full rounded-lg border p-3.5 text-left transition-colors ${
+                                    active
+                                      ? "border-accent bg-accent-soft"
+                                      : "border-border bg-surface hover:border-accent"
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <span
+                                      className={`shrink-0 ${mark.tone}`}
+                                      title={mark.label}
+                                    >
+                                      {mark.mark}
+                                    </span>
+                                    <span className="min-w-0 text-meta text-foreground">
+                                      {question.text}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                    <span
+                                      className={`rounded-pill px-2 py-0.5 font-mono text-[11px] ${
+                                        KIND_TONE[question.kind] ?? KIND_TONE.other
+                                      }`}
+                                    >
+                                      {question.kind}
+                                    </span>
+                                    {followUps.length > 0 && (
+                                      <span className="font-mono text-[11px] text-muted-foreground">
+                                        +{followUps.length} follow-ups
+                                      </span>
+                                    )}
+                                    {reusable && (
+                                      <span className="rounded-pill bg-lemon px-2 py-0.5 font-mono text-[11px] text-lemon-ink">
+                                        reusable
+                                      </span>
+                                    )}
+                                    {rowAnswers.length > 0 && (
+                                      <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                                        v{Math.max(...rowAnswers.map((a) => a.version))}
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
 
           {/* ── 练习台 ── */}
@@ -528,7 +517,7 @@ export function StudioBoard({
                     You already answered this one
                   </p>
                   <p className="mt-1 text-meta text-muted-foreground">
-                    「{current.reusable.fromQuestionText}」的定稿可以直接拿来当起点。
+                    You already locked an answer to &ldquo;{current.reusable.fromQuestionText}&rdquo;. Start from it.
                   </p>
                   <p className="mt-2 line-clamp-3 text-meta text-foreground">
                     {current.reusable.content}
@@ -539,7 +528,7 @@ export function StudioBoard({
                     onClick={() => void adoptReusable()}
                     className="mt-2.5 rounded-md border border-lemon-ink/30 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-lemon-ink transition-opacity hover:opacity-70 disabled:opacity-40"
                   >
-                    {busy === "adopt" ? "…" : "拿来当 v1"}
+                    {busy === "adopt" ? "…" : "Use as v1"}
                   </button>
                 </div>
               )}
@@ -556,13 +545,13 @@ export function StudioBoard({
                     Versions
                   </p>
                   <p className="ml-auto font-mono text-meta text-muted-foreground">
-                    {versions.length === 0 ? "还没练过" : `${versions.length} takes`}
+                    {versions.length === 0 ? "Not practised yet" : `${versions.length} takes`}
                   </p>
                 </div>
 
                 {versions.length === 0 ? (
                   <p className="mt-3 text-meta text-muted-foreground">
-                    先用上面的语音练一遍，或者
+                    Practise it out loud above, or 
                     <button
                       type="button"
                       disabled={busy !== null}
@@ -571,7 +560,7 @@ export function StudioBoard({
                       }
                       className="ml-1 text-accent underline underline-offset-4 disabled:opacity-40"
                     >
-                      {busy === "draft" ? "起草中…" : "让 Aceit 先起个草稿"}
+                      {busy === "draft" ? "Drafting…" : "let Aceit draft one first"}
                     </button>
                   </p>
                 ) : (
@@ -604,7 +593,7 @@ export function StudioBoard({
                             }
                             className="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
                           >
-                            {v.status === "keeper" ? "取消定稿" : "设为定稿"}
+                            {v.status === "keeper" ? "Unlock" : "Lock this one"}
                           </button>
                         </div>
                         <p className="mt-1.5 whitespace-pre-wrap text-meta text-foreground">
@@ -613,7 +602,7 @@ export function StudioBoard({
                         {v.spokenTranscript && (
                           <details className="mt-2">
                             <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent">
-                              你当时是这么说的
+                              What you actually said
                             </summary>
                             <p className="mt-1 border-l-2 border-border pl-3 text-[12px] leading-relaxed text-muted-foreground">
                               {v.spokenTranscript}
@@ -625,7 +614,7 @@ export function StudioBoard({
                           if (ids.length === 0) return null;
                           return (
                             <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-                              用到的经历：
+                              Drew on: 
                               {ids.map((i) => experienceTitles[i]).filter(Boolean).join(" · ")}
                             </p>
                           );
@@ -640,7 +629,7 @@ export function StudioBoard({
                     <input
                       value={instruction}
                       onChange={(e) => setInstruction(e.target.value)}
-                      placeholder="想怎么改？比如「结果说具体点，把数字加上」"
+                      placeholder="What should change? e.g. &quot;make the result concrete, put the numbers in&quot;"
                       className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-1.5 text-meta text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
                     />
                     <button
@@ -656,15 +645,15 @@ export function StudioBoard({
                       }}
                       className="rounded-md bg-accent px-3.5 py-1.5 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                     >
-                      {busy === "refine" ? "打磨中…" : "打磨"}
+                      {busy === "refine" ? "Refining…" : "Refine"}
                     </button>
                   </div>
                 )}
 
                 {keeper && (
                   <p className="mt-3 font-mono text-[11px] text-mint-ink">
-                    v{keeper.version} 是定稿。同类题（cluster {asking.clusterId ?? "—"}）
-                    在别的岗位下会直接调用这一版。
+                    v{keeper.version} is locked. Questions in the same cluster (
+                    {asking.clusterId ?? "—"}) will pull this version under other roles.
                   </p>
                 )}
               </div>

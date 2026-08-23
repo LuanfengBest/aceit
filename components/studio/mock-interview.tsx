@@ -98,7 +98,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
         ),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "开场失败");
+      if (!res.ok) throw new Error(data.error ?? "Could not start the session");
       setSessionId(data.sessionId);
       setRoleTitle(data.roleTitle);
       setTurns([{ role: "interviewer", content: data.opening }]);
@@ -126,7 +126,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
         body: JSON.stringify({ answer: text.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "出错了");
+      if (!res.ok) throw new Error(data.error ?? "Something went wrong");
       setTurns((t) => [...t, { role: "interviewer", content: data.reply }]);
       speak(data.reply);
     } catch (err) {
@@ -157,7 +157,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
   function startListening() {
     const rec = getRecognition();
     if (!rec) {
-      setError("这个浏览器不支持语音识别。Chrome / Edge 可以。");
+      setError("This browser has no speech recognition. Chrome and Edge do.");
       return;
     }
     window.speechSynthesis?.cancel();
@@ -178,7 +178,11 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
     };
     rec.onerror = (e) => {
       if (e.error === "no-speech") return;
-      setError(e.error === "not-allowed" ? "麦克风权限被拒了" : `识别出错：${e.error}`);
+      setError(
+        e.error === "not-allowed"
+          ? "Mic access was blocked."
+          : `Speech recognition failed: ${e.error}`
+      );
       setListening(false);
     };
     rec.onend = () => setListening(false);
@@ -209,7 +213,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
               onClick={() => setSpeakOn((v) => !v)}
               className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
             >
-              {speakOn ? "朗读 开" : "朗读 关"}
+              {speakOn ? "Read aloud: on" : "Read aloud: off"}
             </button>
             <button
               type="button"
@@ -217,7 +221,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
               onClick={() => void end()}
               className="ml-auto rounded-md border border-border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
             >
-              {busy === "end" ? "沉淀中…" : "结束并沉淀"}
+              {busy === "end" ? "Saving…" : "End & save questions"}
             </button>
           </>
         )}
@@ -227,18 +231,18 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
         <div className="space-y-3 px-5 py-4">
           {harvest !== null && (
             <p className="rounded-md border border-mint bg-mint/30 px-3.5 py-2.5 text-meta text-mint-ink">
-              这场结束了，沉淀了 {harvest} 道题进题库。下面的队列里能找到它们。
+              Session over. {harvest} questions went into your bank — find them under Practice.
             </p>
           )}
           <textarea
             value={jd}
             onChange={(e) => setJd(e.target.value)}
             rows={5}
-            placeholder="粘一份新的 JD 到这里，直接开面。&#10;（粘了会自动建/并入岗位画像，Roles 和 Studio 里都能看到，不用再贴一遍）"
+            placeholder="Paste a JD here and start straight away.&#10;It becomes a role profile automatically — you will find it in Roles and Practice, no need to paste it twice."
             className="w-full rounded-md border border-border bg-surface px-3.5 py-2.5 text-meta text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
           />
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-meta text-muted-foreground">或者面已有的岗位：</span>
+            <span className="text-meta text-muted-foreground">Or interview for a role you already have:</span>
             <select
               value={String(roleId)}
               onChange={(e) => setRoleId(e.target.value === "new" ? "new" : Number(e.target.value))}
@@ -249,7 +253,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
                   {r.title}
                 </option>
               ))}
-              <option value="new">不指定岗位（通用面）</option>
+              <option value="new">No specific role — general interview</option>
             </select>
             <button
               type="button"
@@ -257,7 +261,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
               onClick={() => void start()}
               className="ml-auto rounded-md bg-accent px-4 py-1.5 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {busy === "start" ? "面试官在准备…" : "开始面试"}
+              {busy === "start" ? "Interviewer is reading…" : "Start interview"}
             </button>
           </div>
           {error && <p className="text-meta text-accent">{error}</p>}
@@ -278,14 +282,14 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
                   }`}
                 >
                   <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                    {t.role === "me" ? "你" : "面试官"}
+                    {t.role === "me" ? "You" : "Interviewer"}
                   </p>
                   <p className="whitespace-pre-wrap text-meta">{t.content}</p>
                 </div>
               </div>
             ))}
             {busy === "reply" && (
-              <p className="font-mono text-meta text-muted-foreground">面试官在想…</p>
+              <p className="font-mono text-meta text-muted-foreground">Interviewer is thinking…</p>
             )}
           </div>
 
@@ -302,7 +306,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
                   }
                 }}
                 rows={2}
-                placeholder="打字回答，或者点右边的麦克风说。⌘↵ 发送"
+                placeholder="Type your answer, or hit Talk to say it. ⌘↵ to send"
                 className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3.5 py-2 text-meta text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
               />
               <div className="flex shrink-0 flex-col gap-1.5">
@@ -315,7 +319,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
                       : "border-border text-muted-foreground hover:border-accent hover:text-accent"
                   }`}
                 >
-                  {listening ? "听着…" : "说"}
+                  {listening ? "Listening…" : "Talk"}
                 </button>
                 <button
                   type="button"
@@ -323,7 +327,7 @@ export function MockInterview({ roles }: { roles: { id: number; title: string }[
                   onClick={() => void send(draft)}
                   className="rounded-md bg-accent px-3 py-1 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
-                  发送
+                  Send
                 </button>
               </div>
             </div>

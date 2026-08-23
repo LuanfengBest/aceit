@@ -145,8 +145,8 @@ export function VoicePractice({
       if (e.error === "no-speech") return;
       setError(
         e.error === "not-allowed"
-          ? "麦克风权限被拒了，浏览器地址栏左边可以改"
-          : `识别出错：${e.error}`
+          ? "Mic access was blocked. Change it from the icon in the address bar."
+          : `Speech recognition failed: ${e.error}`
       );
       setPhase("idle");
     };
@@ -167,7 +167,7 @@ export function VoicePractice({
     recRef.current?.stop();
     const said = (finalRef.current + interim).trim();
     if (said.length < 4) {
-      setError("没听到内容。是不是麦克风没收到？");
+      setError("Nothing came through. Is the mic picking you up?");
       setPhase("idle");
       return;
     }
@@ -181,7 +181,7 @@ export function VoicePractice({
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "评点失败");
+        setError(data.error ?? "Could not review that take");
         setPhase("idle");
         return;
       }
@@ -248,10 +248,10 @@ export function VoicePractice({
       {showHints && (
         <div className="mt-3 rounded-md border border-mint bg-mint/25 px-3.5 py-3">
           {related === null ? (
-            <p className="text-meta text-muted-foreground">找面经里的同类题…</p>
+            <p className="text-meta text-muted-foreground">Looking for the same question in the wild…</p>
           ) : related.length === 0 ? (
             <p className="text-meta text-muted-foreground">
-              面经里没找到同类的题。这道你得自己想。
+              Nothing similar in your signals. This one is yours to work out.
             </p>
           ) : (
             <ul className="space-y-3">
@@ -266,18 +266,18 @@ export function VoicePractice({
                         rel="noreferrer"
                         className="ml-auto max-w-[14rem] shrink-0 truncate text-meta text-muted-foreground underline decoration-border underline-offset-4 hover:decoration-accent"
                       >
-                        {r.sourceTitle || "原文"} ↗
+                        {r.sourceTitle || "Source"} ↗
                       </a>
                     )}
                   </div>
                   {r.approach ? (
                     <p className="mt-1 text-meta text-muted-foreground">
-                      <span className="text-mint-ink">别人怎么答：</span>
+                      <span className="text-mint-ink">How they answered: </span>
                       {r.approach.content}
                     </p>
                   ) : (
                     <p className="mt-1 text-meta text-muted-foreground">
-                      这条面经只记了题，没记答法。
+                      That signal recorded the question only, no answer.
                     </p>
                   )}
                 </li>
@@ -289,7 +289,7 @@ export function VoicePractice({
 
       {!supported && (
         <p className="mt-3 rounded-md border border-border bg-surface-2 px-3 py-2 text-meta text-muted-foreground">
-          这个浏览器不支持语音识别。Chrome / Edge 可以，Safari 不行。
+          This browser has no speech recognition. Chrome and Edge do; Safari does not.
         </p>
       )}
 
@@ -302,7 +302,7 @@ export function VoicePractice({
               disabled={!supported}
               className="rounded-md bg-accent px-3.5 py-1.5 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {critique ? "再来一遍" : "开始"}
+              {critique ? "Take it again" : "Start"}
             </button>
             <button
               type="button"
@@ -310,37 +310,37 @@ export function VoicePractice({
               disabled={!supported}
               className="rounded-md border border-border px-3 py-1.5 text-meta text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
             >
-              跳过念题，直接说
+              Skip the read-out, just talk
             </button>
           </>
         )}
         {phase === "asking" && (
-          <p className="font-mono text-meta text-muted-foreground">正在念题…</p>
+          <p className="font-mono text-meta text-muted-foreground">Reading the question…</p>
         )}
         {phase === "listening" && (
           <>
             <span className="flex items-center gap-2 font-mono text-meta text-accent">
               <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-              听着
+              Listening
             </span>
             <button
               type="button"
               onClick={submit}
               className="rounded-md bg-accent px-3.5 py-1.5 text-meta text-white transition-opacity hover:opacity-90"
             >
-              答完了
+              Done answering
             </button>
           </>
         )}
         {phase === "thinking" && (
-          <p className="font-mono text-meta text-muted-foreground">在听你刚才说的…</p>
+          <p className="font-mono text-meta text-muted-foreground">Listening back to what you said…</p>
         )}
       </div>
 
       {(transcript || interim) && phase !== "done" && (
         <div className="mt-3 rounded-md border border-border bg-surface-2 px-3.5 py-3">
           <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-            你说的
+            What you said
           </p>
           <p className="text-meta text-foreground">
             {transcript}
@@ -370,7 +370,7 @@ export function VoicePractice({
                     d.ok ? "bg-mint text-mint-ink" : "bg-peach text-peach-ink"
                   }`}
                 >
-                  {d.ok ? "OK" : "改"}
+                  {d.ok ? "OK" : "Fix"}
                 </span>
                 <div className="min-w-0">
                   <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
@@ -408,14 +408,14 @@ export function VoicePractice({
               onClick={ask}
               className="rounded-md bg-accent px-3.5 py-1.5 text-meta text-white transition-opacity hover:opacity-90"
             >
-              再来一遍
+              Take it again
             </button>
             <button
               type="button"
               onClick={keep}
               className="rounded-md border border-border px-3 py-1.5 text-meta text-muted-foreground transition-colors hover:border-accent hover:text-accent"
             >
-              就按这版定稿
+              Lock this version
             </button>
           </div>
         </div>
