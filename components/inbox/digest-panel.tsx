@@ -9,6 +9,8 @@ export interface DigestRow {
   sourceUrl: string | null;
   /** 视频转出来的文字，没有就是 null */
   transcript: string | null;
+  /** 抽完之后的核对结果：漏抽 / 多抽 */
+  audit: { unit: string; type: string; of: string; detail: string }[];
   status: "pending" | "processed" | "failed";
   type: "normal" | "video";
   imageCount: number;
@@ -34,6 +36,7 @@ const PAGE_SIZE = 15;
 export function DigestPanel({ rows }: { rows: DigestRow[] }) {
   const router = useRouter();
   const [openRow, setOpenRow] = useState<number | null>(null);
+  const [openAudit, setOpenAudit] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [queue, setQueue] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +195,18 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
                   {row.insightCount || "—"}
                 </td>
                 <td className="px-5 text-right">
+                  {row.audit.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenAudit(openAudit === row.id ? null : row.id)
+                      }
+                      className="mr-1 rounded-pill bg-peach px-2 py-0.5 font-mono text-[11px] text-peach-ink transition-opacity hover:opacity-75"
+                      title="核对发现信息对不上"
+                    >
+                      ⚠ {row.audit.length}
+                    </button>
+                  )}
                   {row.transcript && (
                     <button
                       type="button"
@@ -222,6 +237,38 @@ export function DigestPanel({ rows }: { rows: DigestRow[] }) {
                   </button>
                 </td>
               </tr>
+              {openAudit === row.id && row.audit.length > 0 && (
+                <tr className="border-b border-border bg-peach/25 last:border-b-0">
+                  <td colSpan={6} className="px-5 py-4">
+                    <p className="mb-1 font-mono text-meta uppercase tracking-[0.12em] text-peach-ink">
+                      Check · {row.audit.length} issues
+                    </p>
+                    <p className="mb-3 text-meta text-muted-foreground">
+                      抽完之后回头核对原文的结果。missing = 原文里有但没抽出来，
+                      unsupported = 抽出来了但原文里找不到依据。
+                    </p>
+                    <ul className="max-h-72 space-y-2 overflow-y-auto">
+                      {row.audit.map((f, i) => (
+                        <li key={i} className="flex gap-2.5">
+                          <span
+                            className={`mt-0.5 shrink-0 rounded-pill px-2 py-0.5 font-mono text-[11px] ${
+                              f.type === "unsupported"
+                                ? "bg-accent-soft text-accent"
+                                : "bg-lemon text-lemon-ink"
+                            }`}
+                          >
+                            {f.type === "unsupported" ? "多" : "漏"}
+                          </span>
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {f.unit}
+                          </span>
+                          <span className="text-meta text-foreground">{f.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                </tr>
+              )}
               {openRow === row.id && row.transcript && (
                 <tr className="border-b border-border bg-surface-2 last:border-b-0">
                   <td colSpan={6} className="px-5 py-4">

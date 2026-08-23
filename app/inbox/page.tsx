@@ -163,6 +163,14 @@ export default async function InboxPage() {
       title: item.title || "(no title)",
       sourceUrl: item.sourceUrl,
       transcript: item.transcript,
+      audit: (() => {
+        try {
+          const parsed = JSON.parse(item.audit ?? "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })(),
       status: item.status,
       type: item.type,
       imageCount,

@@ -107,7 +107,11 @@ export async function POST(_req: NextRequest, { params }: Params) {
     }
 
     db.update(inboxItems)
-      .set({ status: result.questions.length + result.insights.length > 0 ? "processed" : "failed" })
+      .set({
+        status:
+          result.questions.length + result.insights.length > 0 ? "processed" : "failed",
+        audit: JSON.stringify(result.audit),
+      })
       .where(eq(inboxItems.id, id))
       .run();
 
@@ -119,6 +123,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
       questions: result.questions.length,
       insights: result.insights.length,
       dropped: result.dropped,
+      units: result.units,
+      audit: result.audit.length,
       linked: result.insights.filter((i) => i.answers !== null).length,
     });
   } catch (err) {

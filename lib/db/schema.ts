@@ -25,6 +25,13 @@ export const inboxItems = sqliteTable("inbox_items", {
   mediaPath: text("media_path"),
   /** 视频转出来的文字 */
   transcript: text("transcript"),
+  /**
+   * 抽完之后的核对结果，JSON 数组：漏抽的和多抽的。
+   * 空数组 = 这一轮没查出问题；null = 还没核过。
+   * 页面上会把有问题的素材标出来——不标的话，
+   * 使用者没法知道自己看到的是不是完整的
+   */
+  audit: text("audit"),
   raw: text("raw").notNull(),
   status: text("status", { enum: ["pending", "processed", "failed"] })
     .notNull()
