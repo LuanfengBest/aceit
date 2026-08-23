@@ -80,6 +80,9 @@ export function StudioBoard({
    */
   const [mode, setMode] = useState<"practice" | "mock">("practice");
   const [kindFilter, setKindFilter] = useState<Set<string>>(new Set());
+  // 两大块一次只看一块。之前上下叠着放，通用那块 46 道题，
+  // 要滚过全部才看得到岗位那块，等于没分开
+  const [block, setBlock] = useState<"universal" | "role">("universal");
 
   const current = items.find((i) => i.question.id === selected) ?? items[0] ?? null;
 
@@ -123,29 +126,34 @@ export function StudioBoard({
 
     return [
       {
-        key: "universal",
-        title: "Asked in every interview",
-        note: "Polish these once — they carry over to every role you apply to.",
-        tone: "lavender" as const,
-        pinned: true,
+        key: "universal" as const,
+        tab: "Every interview",
+        tabNote: "Same for every role",
+        note: "Asked no matter which role you apply to — who you are, what you have done, how you work. Polish these once and they carry over. Grouped by what the question tests.",
+        empty: "Nothing here yet. Hit “Write universal set” above.",
         total: universal.length,
-        // 通用题按题型分：这些标签不随岗位变
+        // 通用题按题型分：这些标签不随岗位变。
+        // 小标题已经是题型了，卡片上就不再挂 kind 标签，那是重复
+        showKind: false,
         groups: groupBy(universal, (i) => KIND_LABEL[i.question.kind] ?? "Other"),
       },
       {
-        key: "role",
-        title: activeRole ? activeRole.title : "Role-specific",
+        key: "role" as const,
+        tab: activeRole ? activeRole.title : "This role",
+        tabNote: "Changes with the role",
         note: activeRole?.domain
-          ? `Tied to ${activeRole.domain}. Switch roles and this whole block changes.`
-          : "Everything this JD names. Switch roles and this whole block changes.",
-        tone: "peach" as const,
-        pinned: false,
+          ? `Only for ${activeRole.domain}. Switch roles at the top and this whole block changes. Grouped by business area.`
+          : "Everything this JD names. Switch roles at the top and this whole block changes. Grouped by business area.",
+        empty: "Nothing for this role yet. Hit “Write role set” above.",
         total: roleSide.length,
-        // 岗位题按业务域分：标签跟着 JD 走
+        // 岗位题按业务域分，题型不是分组依据，所以卡片上留着 kind 标签
+        showKind: true,
         groups: groupBy(roleSide, (i) => i.question.topic ?? "Unsorted"),
       },
-    ].filter((sec) => sec.total > 0);
+    ];
   }, [items, activeRole, kindFilter]);
+
+  const shown = sections.find((sec) => sec.key === block) ?? sections[0];
 
   const stats = useMemo(() => {
     let k = 0;
@@ -403,47 +411,79 @@ export function StudioBoard({
         <div className="grid gap-5 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
           {/* ── 题目队列 ── */}
           <div className="space-y-4 lg:max-h-[calc(100vh-16rem)] lg:overflow-y-auto lg:pr-1">
-            {sections.map((sec) => {
-              const ink =
-                sec.tone === "lavender" ? "text-lavender-ink" : "text-peach-ink";
-              const bg = sec.tone === "lavender" ? "bg-lavender" : "bg-peach";
-              const edge =
-                sec.tone === "lavender"
-                  ? "border-lavender-ink/40"
-                  : "border-peach-ink/40";
-              return (
-                <section key={sec.key} className={`rounded-xl border-l-4 pl-3 ${edge}`}>
-                  <div className={`mb-2 rounded-lg px-3.5 py-3 ${bg}`}>
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <p className={`text-section ${ink}`}>{sec.title}</p>
-                      {sec.pinned && (
-                        <span
-                          className={`rounded-pill border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] ${ink} ${edge}`}
-                        >
-                          pinned
-                        </span>
-                      )}
-                      <span className={`ml-auto font-mono text-meta ${ink}`}>
+            {/* 两大块的切换。一次只看一块 */}
+            <div className="grid grid-cols-2 gap-1.5">
+              {sections.map((sec) => {
+                const on = sec.key === block;
+                const ink = sec.key === "universal" ? "lavender" : "peach";
+                return (
+                  <button
+                    key={sec.key}
+                    type="button"
+                    onClick={() => setBlock(sec.key as "universal" | "role")}
+                    className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
+                      on
+                        ? ink === "lavender"
+                          ? "border-lavender-ink/45 bg-lavender"
+                          : "border-peach-ink/45 bg-peach"
+                        : "border-border bg-surface hover:border-accent"
+                    }`}
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span
+                        className={`text-meta font-semibold ${
+                          on
+                            ? ink === "lavender"
+                              ? "text-lavender-ink"
+                              : "text-peach-ink"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {sec.tab}
+                      </span>
+                      <span
+                        className={`ml-auto font-mono text-meta ${
+                          on
+                            ? ink === "lavender"
+                              ? "text-lavender-ink"
+                              : "text-peach-ink"
+                            : "text-muted-foreground"
+                        }`}
+                      >
                         {sec.total}
                       </span>
                     </div>
-                    <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
-                      {sec.note}
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                      {sec.tabNote}
                     </p>
-                  </div>
+                  </button>
+                );
+              })}
+            </div>
 
-                  <div className="space-y-2.5">
-                    {sec.groups.map(([tag, rows]) => (
+            {shown && (
+              <div>
+                <p className="mb-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                  {shown.note}
+                </p>
+
+                {shown.total === 0 ? (
+                  <p className="rounded-lg border border-border bg-surface px-4 py-6 text-center text-meta text-muted-foreground">
+                    {shown.empty}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {shown.groups.map(([tag, rows]) => (
                       <div key={tag}>
-                        <div className="mb-1 flex items-baseline gap-2 px-0.5">
+                        <div className="mb-1 flex items-baseline gap-2 border-b border-border pb-1">
                           <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
                             {tag}
                           </span>
-                          <span className="font-mono text-[11px] text-muted-foreground">
+                          <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                             {rows.length}
                           </span>
                         </div>
-                        <ul className="space-y-1.5">
+                        <ul className="space-y-1.5 pt-1.5">
                           {rows.map(({ question, answers: rowAnswers, followUps, reusable }) => {
                             const active = question.id === current?.question.id;
                             const p = progressOf(rowAnswers);
@@ -470,30 +510,38 @@ export function StudioBoard({
                                       {question.text}
                                     </span>
                                   </div>
-                                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                    <span
-                                      className={`rounded-pill px-2 py-0.5 font-mono text-[11px] ${
-                                        KIND_TONE[question.kind] ?? KIND_TONE.other
-                                      }`}
-                                    >
-                                      {question.kind}
-                                    </span>
-                                    {followUps.length > 0 && (
-                                      <span className="font-mono text-[11px] text-muted-foreground">
-                                        +{followUps.length} follow-ups
-                                      </span>
-                                    )}
-                                    {reusable && (
-                                      <span className="rounded-pill bg-lemon px-2 py-0.5 font-mono text-[11px] text-lemon-ink">
-                                        reusable
-                                      </span>
-                                    )}
-                                    {rowAnswers.length > 0 && (
-                                      <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-                                        v{Math.max(...rowAnswers.map((a) => a.version))}
-                                      </span>
-                                    )}
-                                  </div>
+                                  {(followUps.length > 0 ||
+                                    reusable ||
+                                    rowAnswers.length > 0 ||
+                                    shown.showKind) && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                      {/* 通用块的小标题已经是题型了，卡片上再挂一次是重复 */}
+                                      {shown.showKind && (
+                                        <span
+                                          className={`rounded-pill px-2 py-0.5 font-mono text-[11px] ${
+                                            KIND_TONE[question.kind] ?? KIND_TONE.other
+                                          }`}
+                                        >
+                                          {question.kind}
+                                        </span>
+                                      )}
+                                      {followUps.length > 0 && (
+                                        <span className="font-mono text-[11px] text-muted-foreground">
+                                          +{followUps.length} follow-ups
+                                        </span>
+                                      )}
+                                      {reusable && (
+                                        <span className="rounded-pill bg-lemon px-2 py-0.5 font-mono text-[11px] text-lemon-ink">
+                                          reusable
+                                        </span>
+                                      )}
+                                      {rowAnswers.length > 0 && (
+                                        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                                          v{Math.max(...rowAnswers.map((a) => a.version))}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                 </button>
                               </li>
                             );
@@ -502,9 +550,9 @@ export function StudioBoard({
                       </div>
                     ))}
                   </div>
-                </section>
-              );
-            })}
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── 练习台 ── */}
