@@ -16,8 +16,12 @@ const MAX_IMAGES = 14;
 
 /** 出处校验挡掉了多少条。挡掉的都是指不出出处的，报出来才知道是模型没给还是被拦了 */
 export interface DigestDropped {
+  /** 各单元里模型给出了答法的题数 */
   approachesReturned: number;
+  /** 其中抄得出原话、留下来的 */
   approachesKept: number;
+  /** 跨单元配对时又挂上去的（题和答法不在同一张图里的那些） */
+  approachesLinked: number;
   insightsReturned: number;
   insightsKept: number;
 }
@@ -76,8 +80,31 @@ async function loadFrames(paths: string[]): Promise<LLMImage[]> {
 /** 每个单元一次调用，同时跑几个 */
 const CONCURRENCY = 3;
 
+/**
+ * 模型抄题时抄一半的情况是有的——Shopee 那条里有道题只抄出「面对」两个字，
+ * 原文是完整的一句。文本单元里原文就在手边，回去比一比就能补全。
+ * 只补长，不截短；找不到就原样返回。
+ */
+function completeFromSource(text: string, lines: string[]): string {
+  const t = text.trim();
+  if (!t || t.length > 120) return t;
+
+  for (const raw of lines) {
+    // 去掉行首的「10. 」「Q3：」这类编号
+    const line = raw.replace(/^\s*(?:[Qq]?\d+[.、:：)]\s*)?/, "").trim();
+    if (!line || line === t) continue;
+    if (!line.startsWith(t)) continue;
+
+    // 抄的是这一行的开头但没抄完。补到整行结束——
+    // 一个列表项就是一道题，停在第一个问号会把后半句丢掉
+    if (line.length > t.length) return line.trim();
+  }
+  return t;
+}
+
 /** 标题不一样但其实是同一道题：去掉标点空格再比 */
-const normalize = (t: string) => t.replace(/[\s，。？?、,.:：；;""''「」]/g, "");
+const normalize = (t: string) =>
+  t.replace(/[\s，。？?、,.:：；;\u201c\u201d\u2018\u2019"'「」（）()]/g, "");
 
 export async function digestInboxItem(item: {
   title: string | null;
@@ -148,9 +175,18 @@ export async function digestInboxItem(item: {
   let approachesReturned = 0;
 
   for (const { unit, result } of perUnit) {
-    const keysInUnit = result.questions.map((q) => normalize(q.text ?? ""));
+    const keysInUnit = result.questions.map((q) =>
+      normalize(
+        unit.kind === "text"
+          ? completeFromSource((q.text ?? "").trim(), unit.lines ?? [])
+          : (q.text ?? "").trim()
+      )
+    );
     result.questions.forEach((q, qi) => {
-      const text = (q.text ?? "").trim();
+      const text =
+        unit.kind === "text"
+          ? completeFromSource((q.text ?? "").trim(), unit.lines ?? [])
+          : (q.text ?? "").trim();
       if (!text) return;
       const key = keysInUnit[qi];
       if (!key) return;
@@ -193,8 +229,25 @@ export async function digestInboxItem(item: {
     });
   }
 
-  const merged = order.map((k) => byKey.get(k)!);
-  const indexOf = new Map(order.map((k, i) => [k, i] as const));
+  // 图里抄的可能是截断版、正文补全的是完整版，文本不同但是同一道题。
+  // 一个键是另一个的前缀就归并，留信息更全的那条
+  const sortedKeys = [...order].sort((a, b) => b.length - a.length);
+  const aliasOf = new Map<string, string>();
+  for (const short of order) {
+    if (aliasOf.has(short)) continue;
+    const longer = sortedKeys.find((k) => k !== short && k.startsWith(short));
+    if (!longer) continue;
+    aliasOf.set(short, longer);
+    const from = byKey.get(short)!;
+    const to = byKey.get(longer)!;
+    if (!to.answer && from.answer) to.answer = from.answer;
+    if (!to.clusterId && from.clusterId) to.clusterId = from.clusterId;
+  }
+  const liveOrder = order.filter((k) => !aliasOf.has(k));
+  const resolveKey = (k: string): string => aliasOf.get(k) ?? k;
+
+  const merged = liveOrder.map((k) => byKey.get(k)!);
+  const indexOf = new Map(liveOrder.map((k, i) => [k, i] as const));
 
   const attached: DigestResult["insights"] = [];
   merged.forEach((m, i) => {
@@ -246,6 +299,10 @@ export async function digestInboxItem(item: {
     .map((g, i) => ({ g, i }))
     .filter(({ g }) => g.kind === "approach");
 
+  // 挂载之前先记下来。合并进已有答法的那条不会让 attached 变长，
+  // 事后拿长度反推会算成负数
+  const approachesFromUnits = attached.length;
+  let approachesLinked = 0;
   if (orphanApproaches.length > 0 && merged.length > 0) {
     const links = await linkAnswers(
       merged.map((m) => m.text),
@@ -256,7 +313,6 @@ export async function digestInboxItem(item: {
       }))
     );
 
-    const takenBy = new Map<number, number>(attached.map((a) => [a.answers as number, 0]));
     const moved = new Set<number>();
 
     for (const { index, questionIndex } of links) {
@@ -270,9 +326,9 @@ export async function digestInboxItem(item: {
         already.evidence = `${already.evidence}\n${g.evidence}`;
       } else {
         attached.push({ ...g, answers: questionIndex });
-        takenBy.set(questionIndex, 0);
       }
       moved.add(index);
+      approachesLinked++;
     }
 
     // 挂上去的就不再重复出现在 playbook 里
@@ -286,7 +342,8 @@ export async function digestInboxItem(item: {
     audit,
     dropped: {
       approachesReturned,
-      approachesKept: attached.length,
+      approachesKept: approachesFromUnits,
+      approachesLinked,
       insightsReturned,
       insightsKept: general.length,
     },
@@ -297,7 +354,7 @@ export async function digestInboxItem(item: {
       rationale: "来自外部面经",
       source: "inbox" as const,
       follows:
-        m.followsKey !== null ? (indexOf.get(m.followsKey) ?? null) : null,
+        m.followsKey !== null ? (indexOf.get(resolveKey(m.followsKey)) ?? null) : null,
     })),
     insights: [...attached, ...general],
   };
