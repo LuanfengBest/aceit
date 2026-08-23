@@ -146,7 +146,8 @@ export const questions = sqliteTable("questions", {
   rationale: text("rationale"),
   /** 相似问题归为同一簇，簇内共享打磨成果 */
   clusterId: text("cluster_id"),
-  source: text("source", { enum: ["role", "material", "inbox", "manual"] })
+  /** interview：真实面试里被问到、题库里原本没有的题。这是闭环回流的那一类 */
+  source: text("source", { enum: ["role", "material", "inbox", "manual", "interview"] })
     .notNull()
     .default("role"),
   /** 判定为重复时指向保留的那条。标记而不删除，判错了还能捞回来 */
@@ -225,6 +226,8 @@ export const interviewQas = sqliteTable("interview_qas", {
   company: text("company"),
   round: text("round"),
   /** 面试官实际问法 */
+  /** 哪一段录音复盘出来的。手动粘的没有 */
+  recordingId: integer("recording_id"),
   askedText: text("asked_text").notNull(),
   /** 我当时怎么答的 */
   myAnswer: text("my_answer"),
@@ -366,3 +369,33 @@ export const mockTurns = sqliteTable("mock_turns", {
 
 export type MockSession = typeof mockSessions.$inferSelect;
 export type MockTurn = typeof mockTurns.$inferSelect;
+
+/**
+ * 一场真实面试的录音。
+ *
+ * 双轨：标签页音频（面试官）+ 麦克风（你自己），采集时就在浏览器里混成一路。
+ * 录音不上传任何地方——存本地，whisper 也在本地跑。
+ * 面试内容里有公司信息和面试官原话，这是不能传第三方的东西。
+ */
+export const recordings = sqliteTable("recordings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  roleId: integer("role_id").references(() => roleProfiles.id, { onDelete: "set null" }),
+  company: text("company"),
+  round: text("round"),
+  /** 本地文件路径 */
+  mediaPath: text("media_path").notNull(),
+  bytes: integer("bytes").notNull().default(0),
+  durationSeconds: integer("duration_seconds"),
+  transcript: text("transcript"),
+  status: text("status", { enum: ["recorded", "transcribed", "debriefed", "failed"] })
+    .notNull()
+    .default("recorded"),
+  /** 出错时的原因，让人知道卡在哪一步 */
+  error: text("error"),
+  interviewedAt: text("interviewed_at"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type Recording = typeof recordings.$inferSelect;

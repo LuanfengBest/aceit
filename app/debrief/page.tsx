@@ -1,8 +1,10 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { interviewQas, questions, roleProfiles } from "@/lib/db/schema";
+import { interviewQas, questions, recordings, roleProfiles } from "@/lib/db/schema";
 import { WorkShell } from "@/components/work-shell";
 import { DebriefForm } from "@/components/debrief/debrief-form";
+import { InterviewRecorder } from "@/components/debrief/interview-recorder";
+import { RecordingList } from "@/components/debrief/recording-list";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +22,28 @@ export default async function DebriefPage() {
     .orderBy(desc(interviewQas.createdAt), desc(interviewQas.id))
     .all();
 
-  const unprepared = rows.filter((r) => r.qa.questionId === null).length;
+  const recs = db
+    .select()
+    .from(recordings)
+    .orderBy(desc(recordings.createdAt), desc(recordings.id))
+    .all();
+
+  // 「没准备过」现在是按 source 判的：复盘时补进题库的题 source=interview。
+  // 之前判 questionId is null，可那些题现在都补进库了，永远数不出来
+  const askedIds = rows.map((r) => r.qa.questionId).filter((x): x is number => x !== null);
+  const freshIds = new Set(
+    askedIds.length > 0
+      ? db
+          .select({ id: questions.id })
+          .from(questions)
+          .where(eq(questions.source, "interview"))
+          .all()
+          .map((q) => q.id)
+      : []
+  );
+  const unprepared = rows.filter(
+    (r) => r.qa.questionId === null || freshIds.has(r.qa.questionId)
+  ).length;
 
   return (
     <WorkShell
@@ -40,7 +63,30 @@ export default async function DebriefPage() {
         </p>
       </div>
 
-      <DebriefForm roles={roles} />
+      <InterviewRecorder roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
+
+      <RecordingList
+        rows={recs.map((r) => ({
+          id: r.id,
+          company: r.company,
+          round: r.round,
+          status: r.status,
+          error: r.error,
+          bytes: r.bytes,
+          durationSeconds: r.durationSeconds,
+          transcript: r.transcript,
+          interviewedAt: r.interviewedAt,
+        }))}
+      />
+
+      <details className="mt-4 rounded-lg border border-border bg-surface px-5 py-3">
+        <summary className="cursor-pointer font-mono text-meta uppercase tracking-[0.1em] text-muted-foreground">
+          Or just type what you remember
+        </summary>
+        <div className="mt-3">
+          <DebriefForm roles={roles} />
+        </div>
+      </details>
 
       {rows.length === 0 ? (
         <p className="mt-6 rounded-lg border border-border bg-surface px-5 py-10 text-center text-meta text-muted-foreground">
@@ -60,13 +106,17 @@ export default async function DebriefPage() {
                       : "bg-peach text-peach-ink"
                   }`}
                 >
-                  {qa.questionId ? "Prepared" : "Never prepped"}
+                  {qa.questionId && !freshIds.has(qa.questionId)
+                    ? "Prepared"
+                    : "Never prepped"}
                 </span>
               </div>
 
               {questionText && (
                 <p className="mt-2 text-meta text-muted-foreground">
-                  Matches: {questionText}
+                  {qa.questionId && freshIds.has(qa.questionId)
+                    ? "Added to your bank — practise it in Studio"
+                    : `Matches: ${questionText}`}
                 </p>
               )}
               {qa.myAnswer && (

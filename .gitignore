@@ -33,3 +33,6 @@ next-env.d.ts
 .env.local
 data/
 data/models/
+
+# 面试录音：本地文件，不进版本库
+data/recordings/

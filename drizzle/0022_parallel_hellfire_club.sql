@@ -1,0 +1,1 @@
+ALTER TABLE `interview_qas` ADD `recording_id` integer;
