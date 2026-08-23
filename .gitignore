@@ -18,8 +18,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
-.env
+# .env* 一网打尽——之前只挡了 .env 和 .env*.local，
+# 结果 .env.demo 漏在外面。密钥这种东西不该靠记得住哪几个后缀
+.env*
+!.env.example
 
 # typescript
 *.tsbuildinfo
