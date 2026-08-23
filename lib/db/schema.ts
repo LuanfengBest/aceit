@@ -108,6 +108,13 @@ export const roleProfiles = sqliteTable("role_profiles", {
   /** domain 画像绑的业务域，如「搜索推荐」「AI导购」。generalist 为空 */
   domain: text("domain"),
   /**
+   * 这个岗位相关的二级分类，JSON 数组（对应 questions.topic）。
+   * 面经题不绑岗位——它们是「别人被问过的题」，不属于任何一份 JD。
+   * 但把 84 道面经题原样挂到每个岗位下面，切到 BI 分析师也能看到
+   * 一堆 AI 导购的题，那是串台。用这个白名单筛一遍。
+   */
+  topics: text("topics").notNull().default("[]"),
+  /**
    * 各家 JD 的差异点，JSON 数组。
    * 聚合成一个画像会抹掉细节，但「米哈游特别看重游戏化场景」这种
    * 是面试时真会被问到的，得留住

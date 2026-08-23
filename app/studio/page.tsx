@@ -47,7 +47,23 @@ export default async function StudioPage({
         .all()
     : [];
 
-  // 面经里的领域题：有业务域但还没归到任何岗位画像下
+  // 面经题不绑岗位——它们是「别人被问过的题」，不属于任何一份 JD。
+  // 但原样挂到每个岗位下面就会串台：切到 BI 分析师也能看到一堆 AI 导购的题。
+  // 用画像上的 topics 白名单筛一遍
+  const activeRole = roles.find((r) => r.id === activeRoleId) ?? null;
+  const allowedTopics = new Set<string>(
+    activeRole
+      ? (() => {
+          try {
+            const v = JSON.parse(activeRole.topics || "[]");
+            return Array.isArray(v) ? (v as string[]) : [];
+          } catch {
+            return [];
+          }
+        })()
+      : []
+  );
+
   const wildRows = db
     .select()
     .from(questions)
@@ -60,7 +76,9 @@ export default async function StudioPage({
       )
     )
     .orderBy(asc(questions.id))
-    .all();
+    // 白名单为空时（画像还没重新提炼过）不筛，宁可多显示也别让队列空掉
+    .all()
+    .filter((q) => allowedTopics.size === 0 || (q.topic ? allowedTopics.has(q.topic) : true));
 
   // 去重：面经题可能同时命中两个集合
   const seen = new Set<number>();
@@ -128,7 +146,7 @@ export default async function StudioPage({
       </div>
 
       <StudioBoard
-        activeRole={roles.find((r) => r.id === activeRoleId) ?? null}
+        activeRole={activeRole}
         roles={roles}
         activeRoleId={activeRoleId}
         items={items}

@@ -1,4 +1,10 @@
 import { callLLMObject } from "@/lib/llm";
+import { CANONICAL_L1 } from "@/lib/taxonomy";
+
+/** 全部二级分类候选。面经题就是按这套分的 */
+const allL2 = () =>
+  CANONICAL_L1.flatMap((d) => d.seeds.map((s) => `- ${s}（${d.name}）`));
+const KNOWN_L2 = new Set(CANONICAL_L1.flatMap((d) => d.seeds));
 
 /**
  * 多份 JD 聚合成一个岗位画像。
@@ -20,6 +26,8 @@ export interface RoleShape {
   keywords: string[];
   /** 各家 JD 的差异点。聚合是有损的，这里把被抹掉的重要差异捞回来 */
   variance: string[];
+  /** 这个岗位相关的二级分类，用来筛面经题 */
+  topics: string[];
 }
 
 /* ────────── 第一步：这份 JD 该并进哪儿 ────────── */
@@ -130,6 +138,12 @@ const SHAPE_SYSTEM = `把同一个岗位的多份 JD 提炼成一个画像。
   「腾讯：明确要求有 To C 亿级产品经验」。
   只有一家提、但可能被针对性追问的，都放这里。这是聚合的唯一损失，要补回来。
 
+topics：**这个岗位的面试会覆盖哪些二级分类**，从给定的候选里挑。
+面经题不绑岗位，要靠这个白名单筛——挑错了，切到这个岗位会看到
+一堆别的方向的题。宁可少挑几个，也不要把不相关的放进来。
+通用型岗位可以多挑一些（它本来就什么都问），
+绑业务域的只挑真正相关的：做 BI 分析的岗位不该出现 AI 导购的题。
+
 title：给这个画像起一个能代表全组的名字。
 通用型就叫「AI 产品经理（通用）」这类；
 绑业务域的把域写进去，如「AI 产品经理 · 搜索推荐」。`;
@@ -142,13 +156,21 @@ const SHAPE_SCHEMA = {
     requirements: { type: "array", items: { type: "string" } },
     nice_to_have: { type: "array", items: { type: "string" } },
     keywords: { type: "array", items: { type: "string" } },
+    topics: {
+      type: "array",
+      items: { type: "string" },
+      description: "从候选二级分类里挑出这个岗位会考的",
+    },
     variance: {
       type: "array",
       items: { type: "string" },
       description: "「公司：差异点」，被聚合抹掉但面试会问的",
     },
   },
-  required: ["title", "responsibilities", "requirements", "nice_to_have", "keywords", "variance"],
+  required: [
+    "title", "responsibilities", "requirements",
+    "nice_to_have", "keywords", "topics", "variance",
+  ],
   additionalProperties: false,
 } as const;
 
@@ -175,11 +197,17 @@ export async function shapeRole(
     requirements: string[];
     nice_to_have: string[];
     keywords: string[];
+    topics: string[];
     variance: string[];
-  }>("extract", `${head}共 ${jds.length} 份 JD：\n\n${block}`, SHAPE_SCHEMA, {
-    system: SHAPE_SYSTEM,
-    maxOutputTokens: 6000,
-  });
+  }>(
+    "extract",
+    `${head}## 二级分类候选（topics 从这里面挑）\n${allL2().join("\n")}\n\n共 ${jds.length} 份 JD：\n\n${block}`,
+    SHAPE_SCHEMA,
+    {
+      system: SHAPE_SYSTEM,
+      maxOutputTokens: 6000,
+    }
+  );
 
   const clean = (arr: unknown) =>
     (Array.isArray(arr) ? arr : [])
@@ -193,6 +221,15 @@ export async function shapeRole(
     requirements: clean(object.requirements),
     niceToHave: clean(object.nice_to_have),
     keywords: clean(object.keywords),
+    // 只留真实存在的二级分类，模型编出来的丢掉。
+    // 归一化再比：模型可能带上括号里的一级分类，或者空格/&符号写法不同
+    topics: clean(object.topics)
+      .map((t) => {
+        const bare = t.replace(/[（(].*$/, "").trim();
+        const norm = (x: string) => x.toLowerCase().replace(/[\s&·]+/g, "");
+        return [...KNOWN_L2].find((k) => norm(k) === norm(bare)) ?? null;
+      })
+      .filter((t): t is string => t !== null),
     variance: clean(object.variance),
   };
 }

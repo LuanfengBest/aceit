@@ -1,0 +1,1 @@
+ALTER TABLE `role_profiles` ADD `topics` text DEFAULT '[]' NOT NULL;

@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
           requirements: JSON.stringify(shape.requirements),
           niceToHave: JSON.stringify(shape.niceToHave),
           keywords: JSON.stringify(shape.keywords),
+          topics: JSON.stringify(shape.topics),
           variance: JSON.stringify(shape.variance),
           kind: verdict.kind,
           domain: verdict.domain,
