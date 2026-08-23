@@ -3,7 +3,10 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 
-const sqlite = new Database(path.join(process.cwd(), "data", "aceit.db"));
+// 演示站用另一份库（不含任何真实内容），本地跑还是 aceit.db。
+// 走环境变量而不是判断 DEMO_MODE，是为了本地也能临时切过去验证
+const DB_FILE = process.env.DB_FILE ?? "data/aceit.db";
+const sqlite = new Database(path.join(process.cwd(), DB_FILE));
 sqlite.pragma("journal_mode = WAL");
 // SQLite 默认不校验外键，每个连接都得单独打开；
 // 不开的话 experiences.doc_id 的 cascade 删除不会触发，会留下孤儿行

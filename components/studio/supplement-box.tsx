@@ -125,7 +125,7 @@ export function SupplementBox({
             }
           }}
           rows={3}
-          placeholder={"What is missing?\n例：LLM-Wiki 那段问得太浅，针对读写分离和为什么不用纯 RAG 再来五道"}
+          placeholder={"What is missing?\n例：那段知识库的经历问得太浅，针对架构选型再来五道"}
           className="w-full resize-y rounded-md border-2 border-border bg-surface-2 px-3.5 py-2.5 pb-9 text-meta leading-relaxed text-foreground shadow-[inset_0_1px_2px_rgba(31,36,48,0.04)] placeholder:text-muted-foreground/70 focus:border-accent focus:bg-surface focus:outline-none"
         />
         <span className="pointer-events-none absolute bottom-2.5 left-3.5 font-mono text-[11px] text-muted-foreground/70">

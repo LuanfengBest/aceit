@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Inter, Instrument_Serif } from "next/font/google";
 import { SiteNav } from "@/components/site-nav";
+import { DemoBanner } from "@/components/demo-banner";
 import "./globals.css";
 
 const inter = Inter({
@@ -41,6 +42,7 @@ export default function RootLayout({
     >
       <body>
         <SiteNav />
+        <DemoBanner />
         {children}
       </body>
     </html>
