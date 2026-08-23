@@ -3,8 +3,7 @@ import { db } from "@/lib/db";
 import { interviewQas, questions, recordings, roleProfiles } from "@/lib/db/schema";
 import { WorkShell } from "@/components/work-shell";
 import { DebriefForm } from "@/components/debrief/debrief-form";
-import { InterviewRecorder } from "@/components/debrief/interview-recorder";
-import { LivePrompter } from "@/components/debrief/live-prompter";
+import { InterviewSession } from "@/components/debrief/interview-session";
 import { RecordingList } from "@/components/debrief/recording-list";
 
 export const dynamic = "force-dynamic";
@@ -64,12 +63,8 @@ export default async function DebriefPage() {
         </p>
       </div>
 
-      {/* 面试进行中用提词，面试结束后用录音复盘。两件事，同一页 */}
-      <div className="mb-4">
-        <LivePrompter roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
-      </div>
-
-      <InterviewRecorder roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
+      {/* 一场面试一个按钮：提词和录音用的是同一路音频，采一次就够 */}
+      <InterviewSession roles={roles.map((r) => ({ id: r.id, title: r.title }))} />
 
       <RecordingList
         rows={recs.map((r) => ({
