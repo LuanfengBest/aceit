@@ -37,7 +37,6 @@ export function SupplementBox({
   experiences: { id: number; title: string; chars: number }[];
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [focus, setFocus] = useState<number | "">("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -103,45 +102,36 @@ export function SupplementBox({
     }
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mb-4 w-full rounded-lg border border-dashed border-border px-4 py-2.5 text-left transition-colors hover:border-accent"
-      >
-        <span className="font-mono text-meta uppercase tracking-[0.1em] text-muted-foreground">
-          + Ask for more questions
-        </span>
-        <span className="ml-2 text-meta text-muted-foreground">
-          Tell Aceit what is missing — it writes them, you keep the ones worth practising.
-        </span>
-      </button>
-    );
-  }
-
   return (
     <div className="mb-4 rounded-lg border border-border bg-surface p-4">
-      <div className="mb-2.5 flex items-center gap-2">
+      <div className="mb-2 flex items-baseline gap-2">
         <p className="font-mono text-meta uppercase tracking-[0.1em] text-muted-foreground">
           Ask for more questions
         </p>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
-        >
-          Close
-        </button>
+        <p className="text-[12px] text-muted-foreground">
+          Tell Aceit what is missing. You keep only the ones worth practising.
+        </p>
       </div>
 
-      <textarea
-        value={instruction}
-        onChange={(e) => setInstruction(e.target.value)}
-        rows={2}
-        placeholder="What is missing? e.g. “LLM-Wiki 那段问得太浅，针对读写分离和为什么不用纯 RAG 再来五道”"
-        className="w-full rounded-md border border-border bg-surface px-3.5 py-2 text-meta text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none"
-      />
+      {/* 输入框常驻，不折叠——藏起来就没人知道这儿能打字 */}
+      <div className="relative">
+        <textarea
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void run();
+            }
+          }}
+          rows={3}
+          placeholder={"What is missing?\n例：LLM-Wiki 那段问得太浅，针对读写分离和为什么不用纯 RAG 再来五道"}
+          className="w-full resize-y rounded-md border-2 border-border bg-surface-2 px-3.5 py-2.5 pb-9 text-meta leading-relaxed text-foreground shadow-[inset_0_1px_2px_rgba(31,36,48,0.04)] placeholder:text-muted-foreground/70 focus:border-accent focus:bg-surface focus:outline-none"
+        />
+        <span className="pointer-events-none absolute bottom-2.5 left-3.5 font-mono text-[11px] text-muted-foreground/70">
+          ⌘↵ to send
+        </span>
+      </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">

@@ -55,7 +55,7 @@ export function WorkShell({
             alt=""
             fill
             sizes="100vw"
-            className="scale-105 object-cover opacity-[0.13] blur-[2px]"
+            className="scale-105 object-cover opacity-[0.42] blur-[1px]"
             priority
           />
         </div>
@@ -64,18 +64,20 @@ export function WorkShell({
           aria-hidden
           className="pointer-events-none fixed inset-0 -z-10"
           style={{
+            // 色场只是给正文垫底，别把图盖死。
+            // 上一版底部压到 94% 不透明，等于把图删了
             background: `linear-gradient(180deg,
-              color-mix(in srgb, ${f.s1} 82%, transparent) 0%,
-              color-mix(in srgb, ${f.s2} 78%, transparent) 18%,
-              color-mix(in srgb, var(--bg) 86%, transparent) 42%,
-              color-mix(in srgb, var(--bg) 94%, transparent) 100%)`,
+              color-mix(in srgb, ${f.s1} 55%, transparent) 0%,
+              color-mix(in srgb, ${f.s2} 62%, transparent) 20%,
+              color-mix(in srgb, var(--bg) 72%, transparent) 48%,
+              color-mix(in srgb, var(--bg) 80%, transparent) 100%)`,
           }}
         />
 
         <div className="mx-auto w-full max-w-[1500px] px-6 pt-8 sm:px-10">
           {/* 标题还是留在深色块里——反色区是视觉规范里定的层次手段 */}
           <div
-            className="inline-flex max-w-[46rem] flex-col rounded-lg px-6 py-5"
+            className="flex w-full flex-col rounded-lg px-7 py-6 sm:px-9 sm:py-7"
             style={{ background: "var(--ink)" }}
           >
             <p className="font-mono text-meta uppercase tracking-[0.14em] text-white/60">
