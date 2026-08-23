@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { questions, roleProfiles, experiences } from "@/lib/db/schema";
-import { generateQuestions } from "@/lib/generate-questions";
+import { generateQuestions, type GenMode } from "@/lib/generate-questions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,13 +24,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "无效的 JSON" }, { status: 400 });
   }
 
-  const roleId = Number(body.roleId);
-  if (!Number.isInteger(roleId)) {
-    return NextResponse.json({ error: "缺少 roleId" }, { status: 400 });
-  }
+  // 不给 roleId 就是出通用题库：跨岗位都会问的那些，不绑任何岗位
+  const raw = Number(body.roleId);
+  const roleId = Number.isInteger(raw) && raw > 0 ? raw : null;
+  const mode: GenMode = roleId === null ? "universal" : "domain";
 
-  const role = db.select().from(roleProfiles).where(eq(roleProfiles.id, roleId)).get();
-  if (!role) return NextResponse.json({ error: "岗位不存在" }, { status: 404 });
+  const role = roleId === null
+    ? null
+    : db.select().from(roleProfiles).where(eq(roleProfiles.id, roleId)).get();
+  if (roleId !== null && !role) {
+    return NextResponse.json({ error: "岗位不存在" }, { status: 404 });
+  }
 
   const exps = db.select().from(experiences).all();
   if (exps.length === 0) {
@@ -57,7 +61,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const generated = await generateQuestions({
-      role: {
+      mode,
+      role: !role ? null : {
         title: role.title,
         kind: role.kind,
         domain: role.domain,
@@ -81,13 +86,29 @@ export async function POST(req: NextRequest) {
     }
 
     // 重新生成时清掉这个岗位上一批题（答案随之级联删除）
-    db.delete(questions).where(eq(questions.roleId, roleId)).run();
+    // 只清掉这一轮该重出的那批：
+    // 通用轮清「模型生成的通用题」（不碰 inbox 来的），岗位轮清这个岗位的
+    if (roleId === null) {
+      db.delete(questions)
+        .where(
+          and(
+            isNull(questions.roleId),
+            eq(questions.scope, "universal"),
+            ne(questions.source, "inbox")
+          )
+        )
+        .run();
+    } else {
+      db.delete(questions).where(eq(questions.roleId, roleId)).run();
+    }
 
     // 先插主问题拿到 id，再回填追问的 parent_id——
     // follows 是数组下标，落库要翻译成真实 id
     const ids: number[] = [];
     for (const q of generated) {
       const { follows: _f, ...row } = q;
+      // 通用题不绑岗位：投哪个岗都会问，绑上去就成了每个岗位各一份，
+      // 打磨成果会散掉
       const r = db.insert(questions).values({ ...row, roleId }).run();
       ids.push(Number(r.lastInsertRowid));
     }

@@ -15,6 +15,8 @@ export interface ReusableAnswer {
 
 export interface QuestionWithAnswers {
   question: Question;
+  /** universal 全局共享 · role 本岗位专属 · wild 面经里的领域题 */
+  bucket: "universal" | "role" | "wild";
   answers: Answer[];
   /** 同 cluster 别的题已经定稿的答案，universal 题才有 */
   reusable: ReusableAnswer | null;
@@ -46,11 +48,13 @@ const PROGRESS_MARK: Record<Progress, { mark: string; tone: string; label: strin
 
 export function StudioBoard({
   roles,
+  activeRole,
   activeRoleId,
   items,
   experienceTitles,
 }: {
   roles: RoleProfile[];
+  activeRole: RoleProfile | null;
   activeRoleId: number | null;
   items: QuestionWithAnswers[];
   experienceTitles: Record<number, string>;
@@ -63,6 +67,7 @@ export function StudioBoard({
   // 连击模式：主问题答完直接问追问，不停下来评点，更像真实面试
   const [chain, setChain] = useState(false);
   const [chainStep, setChainStep] = useState(0);
+  const [kindFilter, setKindFilter] = useState<Set<string>>(new Set());
 
   const current = items.find((i) => i.question.id === selected) ?? items[0] ?? null;
 
@@ -83,19 +88,38 @@ export function StudioBoard({
   const latest = versions[versions.length - 1] ?? null;
   const keeper = versions.find((v) => v.status === "keeper") ?? null;
 
-  // 队列按 scope 分组：universal 排前面，那些跨岗位复用价值最高
+  // 队列按「跟不跟岗位走」分组，不是按 scope。
+  // 通用题切岗位时不动——投哪个岗都会问，重复练没意义
   const groups = useMemo(() => {
-    const uni = items.filter((i) => i.question.scope === "universal");
-    const dom = items.filter((i) => i.question.scope === "domain");
-    const rest = items.filter(
-      (i) => i.question.scope !== "universal" && i.question.scope !== "domain"
-    );
+    const pick = (b: QuestionWithAnswers["bucket"]) =>
+      items.filter(
+        (i) =>
+          i.bucket === b &&
+          (kindFilter.size === 0 || kindFilter.has(i.question.kind))
+      );
     return [
-      { key: "universal", label: "Comes up everywhere", hint: "打磨一次，换岗位直接用", rows: uni },
-      { key: "domain", label: "Domain-specific", hint: "每次都得重新想怎么从经历迁移", rows: dom },
-      { key: "rest", label: "Unsorted", hint: "", rows: rest },
+      {
+        key: "universal",
+        label: "Asked everywhere",
+        hint: "自我介绍、经历深挖、协作冲突。切岗位时这一组不变，打磨一次到处能用",
+        rows: pick("universal"),
+      },
+      {
+        key: "role",
+        label: activeRole ? `${activeRole.title} 专属` : "Role-specific",
+        hint: activeRole?.domain
+          ? `绑定业务域：${activeRole.domain}。换个方向就不问了`
+          : "这份 JD 点名的场景和技术栈",
+        rows: pick("role"),
+      },
+      {
+        key: "wild",
+        label: "From the wild",
+        hint: "面经里别人真被问过的领域题，还没归到任何岗位下",
+        rows: pick("wild"),
+      },
     ].filter((g) => g.rows.length > 0);
-  }, [items]);
+  }, [items, activeRole, kindFilter]);
 
   const stats = useMemo(() => {
     let k = 0;
@@ -169,19 +193,73 @@ export function StudioBoard({
             {r.title}
           </button>
         ))}
-        <button
-          type="button"
-          disabled={busy !== null || !activeRoleId}
-          onClick={() => void post("/api/questions/generate", { roleId: activeRoleId }, "gen")}
-          className="ml-auto rounded-md bg-accent px-3 py-1.5 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {busy === "gen"
-            ? "Writing questions…"
-            : items.length > 0
-              ? "Regenerate questions"
-              : "Generate questions"}
-        </button>
+        <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            disabled={busy !== null}
+            title="出跨岗位都会问的题，不绑任何岗位"
+            onClick={() => void post("/api/questions/generate", {}, "gen-uni")}
+            className="rounded-md border border-border px-3 py-1.5 text-meta text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+          >
+            {busy === "gen-uni" ? "出通用题…" : "出通用题"}
+          </button>
+          <button
+            type="button"
+            disabled={busy !== null || !activeRoleId}
+            title="只出这个岗位/业务域专属的题"
+            onClick={() => void post("/api/questions/generate", { roleId: activeRoleId }, "gen")}
+            className="rounded-md bg-accent px-3 py-1.5 text-meta text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {busy === "gen" ? "出岗位题…" : "出本岗位的题"}
+          </button>
+        </div>
       </div>
+
+      {/* ── 这个岗位在关注什么：从 JD 提炼出来的，出题就是照着这些出的 ── */}
+      {activeRole && (
+        <div className="mb-4 rounded-lg border border-border bg-surface px-4 py-3">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+              What this role cares about
+            </p>
+            {activeRole.domain && (
+              <span className="rounded-pill bg-peach px-2 py-0.5 font-mono text-[11px] text-peach-ink">
+                {activeRole.domain}
+              </span>
+            )}
+            <a
+              href="/roles"
+              className="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
+            >
+              JD 原文 →
+            </a>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(JSON.parse(activeRole.keywords || "[]") as string[]).slice(0, 14).map((k) => (
+              <span
+                key={k}
+                className="rounded-pill bg-surface-2 px-2.5 py-0.5 text-meta text-muted-foreground"
+              >
+                {k}
+              </span>
+            ))}
+          </div>
+          {(JSON.parse(activeRole.variance || "[]") as string[]).length > 0 && (
+            <details className="mt-2.5">
+              <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent">
+                各家的差异点
+              </summary>
+              <ul className="mt-1.5 space-y-1">
+                {(JSON.parse(activeRole.variance || "[]") as string[]).map((v) => (
+                  <li key={v} className="text-meta text-muted-foreground">
+                    · {v}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
 
       {/* ── Session 设置 ── */}
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-2 px-4 py-3">
@@ -190,8 +268,16 @@ export function StudioBoard({
         </p>
         <div className="flex items-center gap-1">
           {[
-            { on: false, label: "One at a time", hint: "答一题 → 评点 → 再来" },
-            { on: true, label: "Full chain", hint: "主问题 + 追问连着问完" },
+            {
+              on: false,
+              label: "逐题",
+              hint: "答一题，立刻评点，改完再答下一题。适合打磨单题",
+            },
+            {
+              on: true,
+              label: "连击",
+              hint: "主问题答完直接进追问，像真实面试一样被一路追着问",
+            },
           ].map((m) => (
             <button
               key={m.label}
@@ -214,6 +300,46 @@ export function StudioBoard({
         <p className="ml-auto font-mono text-meta text-muted-foreground">
           {stats.keeper} locked · {stats.draft} in progress · {stats.total} total
         </p>
+      </div>
+
+      {/* ── 按类型筛 ── */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <p className="font-mono text-meta uppercase tracking-[0.12em] text-muted-foreground">
+          Filter
+        </p>
+        {(["behavioral", "technical", "case", "resume", "other"] as const).map((k) => {
+          const n = items.filter((i) => i.question.kind === k).length;
+          if (n === 0) return null;
+          const on = kindFilter.has(k);
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() =>
+                setKindFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(k)) next.delete(k);
+                  else next.add(k);
+                  return next;
+                })
+              }
+              className={`rounded-pill px-2.5 py-0.5 font-mono text-[11px] transition-opacity ${
+                KIND_TONE[k]
+              } ${on ? "" : "opacity-40 hover:opacity-70"}`}
+            >
+              {k} {n}
+            </button>
+          );
+        })}
+        {kindFilter.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setKindFilter(new Set())}
+            className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-accent"
+          >
+            清除
+          </button>
+        )}
       </div>
 
       {error && <p className="mb-4 text-meta text-accent">{error}</p>}

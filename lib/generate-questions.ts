@@ -61,6 +61,40 @@ const SYSTEM = `你不是在做题库，你是**这个岗位上干了七八年�
 
 主问题出 10-14 道，加上追问总共 20-35 条。宁可少而准，不要凑数。`;
 
+/**
+ * 通用题和岗位题分开出。
+ *
+ * 之前所有题都挂在岗位上，切一个岗位就重出一整套——
+ * 可「讲讲你自己」「这个项目你负责哪一段」这类题，投哪个岗都会问，
+ * 重复生成既浪费，又让同一道题在不同岗位下各有一份答案，打磨成果散掉了。
+ */
+const UNIVERSAL_TAIL = `
+
+## 这一轮只出**通用题**
+
+只出「换个岗位也会问」的题：自我介绍、经历深挖、项目里的具体决策、
+协作与冲突、动机与规划、简历上的追问。这些问的是**这个人**。
+
+**不要出绑定具体业务域的题**——不要问 AI 搜索怎么做、导购指标怎么定，
+那些留给岗位专属的那一轮。
+
+scope 全部填 universal。`;
+
+const DOMAIN_TAIL = `
+
+## 这一轮只出**这个岗位专属的题**
+
+只出「换个方向就不问了」的题：这个业务域的专门知识、
+这份 JD 里点名的技术栈和场景、各家 JD 的差异点。
+
+**不要出通用题**——自我介绍、讲个项目、你的缺点、为什么跳槽，
+这些已经在通用题库里了，这一轮重复出就是浪费。
+
+如果候选人在这个业务域上有明显缺口，要问「你没做过 X，但做过 Y，
+你觉得能迁移吗」——看他有没有想过这件事。
+
+scope 全部填 domain。`;
+
 const SCHEMA = {
   type: "object",
   properties: {
@@ -95,8 +129,12 @@ const SCHEMA = {
   additionalProperties: false,
 } as const;
 
+export type GenMode = "universal" | "domain";
+
 export interface QuestionInputs {
-  role: {
+  mode: GenMode;
+  /** 通用题这一轮不绑岗位，传 null */
+  role: null | {
     title: string;
     kind: string;
     domain: string | null;
@@ -118,7 +156,9 @@ export type GeneratedQuestion = Omit<NewQuestion, "roleId"> & { follows: number 
 export async function generateQuestions(
   inputs: QuestionInputs
 ): Promise<GeneratedQuestion[]> {
-  const roleBlock = [
+  const roleBlock = inputs.role === null
+    ? "（这一轮不针对具体岗位，出的是跨岗位通用的题）"
+    : [
     `岗位：${inputs.role.title}`,
     inputs.role.kind === "domain"
       ? `业务域：${inputs.role.domain}（这个域的专门知识是考察重点）`
@@ -167,7 +207,10 @@ export async function generateQuestions(
     "generate",
     `## 岗位画像\n${roleBlock}\n\n## 候选人经历库\n${expBlock}\n\n## 外部情报\n${wildBlock}`,
     SCHEMA,
-    { system: SYSTEM, maxOutputTokens: 16000 }
+    {
+      system: SYSTEM + (inputs.mode === "universal" ? UNIVERSAL_TAIL : DOMAIN_TAIL),
+      maxOutputTokens: 16000,
+    }
   );
 
   const KINDS = ["behavioral", "technical", "case", "resume", "other"] as const;
@@ -180,7 +223,9 @@ export async function generateQuestions(
     kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
       ? q.kind
       : "other") as (typeof KINDS)[number],
-    scope: (q.scope === "domain" ? "domain" : "universal") as "universal" | "domain",
+    // scope 由这一轮的模式定死，不看模型填了什么——
+    // 通用轮里冒出来的 domain 题是跑题了，不是新发现
+    scope: inputs.mode,
     rationale: (q.rationale ?? "").trim() || null,
     clusterId: (q.cluster ?? "").trim() || null,
     source: (SOURCES.includes(q.source as (typeof SOURCES)[number])
