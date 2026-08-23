@@ -124,7 +124,7 @@ export async function POST() {
 
     for (const a of assigned) {
       db.update(questions)
-        .set({ topicL1: a.l1, topic: a.l2 })
+        .set({ topicL1: a.l1, topic: a.l2, scope: a.scope })
         .where(eq(questions.id, a.id))
         .run();
     }
@@ -196,6 +196,7 @@ export async function POST() {
         mergedInto: questions.mergedInto,
         l1: questions.topicL1,
         l2: questions.topic,
+        scope: questions.scope,
       })
       .from(questions)
       .where(eq(questions.source, "inbox"))
@@ -204,7 +205,7 @@ export async function POST() {
 
     const resolveTaxo = (
       startId: number
-    ): { l1: string | null; l2: string | null } | null => {
+    ): { l1: string | null; l2: string | null; scope: "universal" | "domain" | null } | null => {
       let cursor: number | null = startId;
       const seen = new Set<number>();
       while (cursor !== null && !seen.has(cursor)) {
@@ -215,7 +216,7 @@ export async function POST() {
           cursor = row.mergedInto;
           continue;
         }
-        if (row.l1) return { l1: row.l1, l2: row.l2 };
+        if (row.l1) return { l1: row.l1, l2: row.l2, scope: row.scope };
         cursor = row.parentId;
       }
       return null;
@@ -226,13 +227,14 @@ export async function POST() {
       const inherited = resolveTaxo(q.parentId);
       if (!inherited?.l1) continue;
       db.update(questions)
-        .set({ topicL1: inherited.l1, topic: inherited.l2 })
+        .set({ topicL1: inherited.l1, topic: inherited.l2, scope: inherited.scope })
         .where(eq(questions.id, q.id))
         .run();
       byId.set(q.id, {
         ...byId.get(q.id)!,
         l1: inherited.l1,
         l2: inherited.l2,
+        scope: inherited.scope,
       });
     }
 

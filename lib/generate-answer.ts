@@ -59,7 +59,7 @@ const PICK_SCHEMA = {
  * 全量把 20+ 条经历的原文塞进去会把模型的输出挤没（实测只吐 142 字就断句），
  * 而且违背"按问题类型精准调用某几条"的设计。
  */
-async function pickExperiences(
+export async function pickExperiences(
   question: string,
   experiences: ExperienceRef[],
   limit = 4

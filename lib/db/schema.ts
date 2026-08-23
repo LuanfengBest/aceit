@@ -143,6 +143,13 @@ export const questions = sqliteTable("questions", {
   topic: text("topic"),
   /** 一级分类。固定集合优先，模型可新建，见 lib/taxonomy.ts */
   topicL1: text("topic_l1"),
+  /**
+   * universal：换个岗位也会问（为什么想做 AI PM、讲一个你做过的项目、经历深挖）。
+   * domain：某个领域特有（AI 搜索的评测怎么设计）。
+   * 分开是因为两者的复用方式不一样——universal 的定稿答案跨岗位直接拿来用，
+   * domain 的得重新想怎么从已有经历迁移过去。
+   */
+  scope: text("scope", { enum: ["universal", "domain"] }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -161,6 +168,13 @@ export const answers = sqliteTable("answers", {
   note: text("note"),
   /** 这版答案调用了哪几条经历，JSON 数组存 experiences.id */
   usedExperienceIds: text("used_experience_ids").notNull().default("[]"),
+  /**
+   * keeper = 定稿，这道题就按这版讲。一道题同时只有一版是 keeper。
+   * 版本链全留着，只是标出哪一版是要用的那版
+   */
+  status: text("status", { enum: ["draft", "keeper"] }).notNull().default("draft"),
+  /** 语音陪练时说出来的原话（转写）。定稿往往是打磨过的书面版，口语版另存 */
+  spokenTranscript: text("spoken_transcript"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

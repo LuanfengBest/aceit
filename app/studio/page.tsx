@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { answers, experiences, questions, roleProfiles } from "@/lib/db/schema";
 import { WorkShell } from "@/components/work-shell";
+import { findReusableAnswer } from "@/lib/answer-reuse";
 import { StudioBoard, type QuestionWithAnswers } from "@/components/studio/studio-board";
 
 export const dynamic = "force-dynamic";
@@ -50,9 +51,21 @@ export default async function StudioPage({
   const rows = [...roleRows, ...wildRows];
 
   const allAnswers = db.select().from(answers).orderBy(asc(answers.version)).all();
-  const items: QuestionWithAnswers[] = rows.map((question) => ({
+  const answersOf = (qid: number) => allAnswers.filter((a) => a.questionId === qid);
+
+  // 追问跟着主问题走，不单独列进队列——单看一句「你具体做了什么」没有上下文
+  const mains = rows.filter((q) => q.parentId === null);
+  const items: QuestionWithAnswers[] = mains.map((question) => ({
     question,
-    answers: allAnswers.filter((a) => a.questionId === question.id),
+    answers: answersOf(question.id),
+    followUps: rows
+      .filter((q) => q.parentId === question.id)
+      .map((q) => ({ question: q, answers: answersOf(q.id) })),
+    reusable: findReusableAnswer({
+      id: question.id,
+      clusterId: question.clusterId,
+      scope: question.scope,
+    }),
   }));
 
   const experienceTitles: Record<number, string> = {};
@@ -64,12 +77,13 @@ export default async function StudioPage({
   }
 
   const answered = items.filter((i) => i.answers.length > 0).length;
+  const locked = items.filter((i) => i.answers.some((a) => a.status === "keeper")).length;
 
   return (
     <WorkShell
       meta="Layer 04"
       title="Story Studio"
-      subtitle="Every question this role will ask, and your best answer to each — sharpened one version at a time."
+      subtitle="Aceit asks out loud, you answer out loud. Every take is kept, so you can hear which version was actually better."
       image="/images/story-1.webp"
       field="roles"
     >
@@ -78,7 +92,8 @@ export default async function StudioPage({
           Questions
         </p>
         <p className="font-mono text-meta text-muted-foreground">
-          {roleRows.length} for this role · {wildRows.length} from the wild · {answered} drafted
+          {items.length} to practise · {wildRows.length} from the wild · {answered} drafted ·{" "}
+          {locked} locked
         </p>
       </div>
 

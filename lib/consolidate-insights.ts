@@ -179,7 +179,17 @@ const QT_SYSTEM = `把面试题归到两级分类里。
 - "介绍一个你负责的AI项目" → Experience & Behavior / Project Deep-dive
 - "怎么防止模型输出违规内容" → Safety & Governance / Content Risk
 
-追问和它的主问题必须归到同一个二级分类。`;
+追问和它的主问题必须归到同一个二级分类。
+
+另外给每道题标一个 scope：
+- universal —— **换个岗位也会问**。「为什么想做 AI 产品经理」「讲一个你做过的项目」
+  「你最大的短板是什么」「这个项目最难的地方」这类，问的是这个人，不是某个领域。
+  经历深挖也算 universal——不管投哪个岗，都会挖你的过往。
+- domain —— **某个领域特有**。「AI 搜索的评测集怎么设计」「导购的 CTR 涨了 GMV 没涨」
+  这类，换个方向就不问了。
+
+分这个是因为两者的复用方式不一样：universal 的答案打磨好了跨岗位直接用，
+domain 的每次都得重新想怎么从已有经历迁移过去。拿不准就填 universal。`;
 
 const QT_SCHEMA = {
   type: "object",
@@ -196,8 +206,13 @@ const QT_SCHEMA = {
             type: ["string", "null"],
             description: "新建了一级分类才填，说明为什么现有的都装不下",
           },
+          scope: {
+            type: "string",
+            enum: ["universal", "domain"],
+            description: "换个岗位也会问填 universal，某个领域特有填 domain",
+          },
         },
-        required: ["id", "l1", "l2", "new_l1_reason"],
+        required: ["id", "l1", "l2", "new_l1_reason", "scope"],
         additionalProperties: false,
       },
     },
@@ -212,6 +227,8 @@ export interface TaxonomyAssignment {
   l2: string;
   /** 模型新建的一级分类，落库前会被记下来提示用户 */
   newL1Reason: string | null;
+  /** universal：换岗位也会问；domain：领域特有 */
+  scope: "universal" | "domain";
 }
 
 /**
@@ -237,6 +254,7 @@ export async function assignQuestionTaxonomy(
       l1: string;
       l2: string;
       new_l1_reason: string | null;
+      scope: string;
     }[];
   }>(
     "classify",
@@ -255,6 +273,7 @@ export async function assignQuestionTaxonomy(
       l1: canonicalizeL1(a.l1 ?? ""),
       l2: (a.l2 ?? "").trim() || "General",
       newL1Reason: (a.new_l1_reason ?? "")?.trim() || null,
+      scope: a.scope === "domain" ? ("domain" as const) : ("universal" as const),
     }));
 }
 

@@ -9,7 +9,7 @@ export const maxDuration = 300;
 
 /** 生成某道题的首版答案 */
 export async function POST(req: NextRequest) {
-  let body: { questionId?: unknown };
+  let body: { questionId?: unknown; content?: unknown; note?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -23,6 +23,31 @@ export async function POST(req: NextRequest) {
 
   const question = db.select().from(questions).where(eq(questions.id, questionId)).get();
   if (!question) return NextResponse.json({ error: "问题不存在" }, { status: 404 });
+
+  // 直接给了内容就原样存一版：跨岗位复用定稿走这条路，不用再花一次模型调用
+  const given = typeof body.content === "string" ? body.content.trim() : "";
+  if (given) {
+    const prev = db
+      .select()
+      .from(answers)
+      .where(eq(answers.questionId, questionId))
+      .orderBy(desc(answers.version))
+      .get();
+    const inserted = db
+      .insert(answers)
+      .values({
+        questionId,
+        content: given,
+        version: (prev?.version ?? 0) + 1,
+        parentId: prev?.id ?? null,
+        note: typeof body.note === "string" ? body.note.trim() || null : null,
+      })
+      .run();
+    return NextResponse.json(
+      { id: Number(inserted.lastInsertRowid), version: (prev?.version ?? 0) + 1 },
+      { status: 201 }
+    );
+  }
 
   const role = question.roleId
     ? db.select().from(roleProfiles).where(eq(roleProfiles.id, question.roleId)).get()
