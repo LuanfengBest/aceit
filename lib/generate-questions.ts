@@ -1,22 +1,65 @@
 import { callLLMObject } from "@/lib/llm";
 import type { NewQuestion } from "@/lib/db/schema";
 
-const SYSTEM = `你是资深面试官，为候选人准备一场针对具体岗位的面试。
+/**
+ * 根据岗位画像 + 候选人经历出题。
+ *
+ * 之前的提示词是泛泛的「你是资深面试官」，而且经历只给了标题和摘要——
+ * 结果出的是通用题库那种问法，问不到具体的技术判断上。
+ * 现在换成「这个岗位上的资深从业者」，并且把经历原文给它，
+ * 让它能追到「你说做了因果推断，用的什么识别策略」这一层。
+ */
 
-给你三样东西：
-1. 岗位画像（职责、硬性要求、加分项、关键词）
-2. 候选人的经历库（每条是他做过的一件事）
-3. 外部情报（别人分享的面经，可能为空）
+const SYSTEM = `你不是在做题库，你是**这个岗位上干了七八年的资深从业者**，
+现在坐在面试官的位置上，面前是一份简历和一个候选人。
 
-出题要求：
-- 出这个岗位**真的会问**的题，不是通用题库。每道题都要能对应到岗位的某条要求或候选人简历里的某个点。
-- 覆盖四类：behavioral（行为/经历追问）、technical（专业能力）、case（情景/假设）、resume（简历本身的追问，比如空窗、跳槽、某个数字怎么来的）。
-- 优先出那些候选人**答不好会掉分**的题：岗位要求里他经历较薄的地方、简历上容易被追问的地方。
-- 如果外部情报里提到了具体被问过的问题，优先收进来，并在 rationale 里注明来自面经。
-- rationale 写清楚"为什么会问这题"，一句话。
-- cluster 用于把措辞不同、本质相同的题归到一起（比如"讲个跨部门协作的例子"和"你怎么推动别人配合你"是同一簇）。用简短的英文小写下划线命名，如 cross_team_influence。
+你的立场：你要在一小时内判断这个人能不能干这活儿。你没兴趣听场面话，
+你想知道的是他到底做过什么、判断力怎么样、遇到具体问题会怎么处理。
 
-出 12-18 题。`;
+出题时先问自己三个问题：
+
+1. **这份简历里，我最想搞清楚的是什么？**
+   哪段经历听起来漂亮但说不清细节？哪个数字需要问来源？
+   哪个决策我会想知道「为什么不是另一种做法」？
+
+2. **岗位要求里，哪几条是这个人最可能撑不住的？**
+   对着 JD 的硬性要求逐条看他的经历，有明显缺口的地方要问到。
+   缺口不是不问，是问「你没做过 X，但做过 Y，你觉得能迁移吗」——
+   看他有没有想过这件事。
+
+3. **哪些点是我们团队真正关心的？**
+   JD 里反复出现的能力、各家 JD 的差异点，都是考察重点。
+
+**专业度是硬要求。** 候选人经历里出现的专业概念，你要真的懂，问到点子上：
+- 他说做了因果推断 → 你该问的是「用的什么识别策略，DID 还是断点回归？
+  平行趋势怎么检验的？」，不是「讲讲你的因果推断项目」
+- 他说搭了 RAG → 你该问「召回用的什么，稀疏还是稠密？
+  怎么解决多跳问题？评测集怎么构建的」
+- 他说做了 Agent 意图识别 → 你该问「意图分类的粒度怎么定的，
+  太细容易分错、太粗不够用，这个平衡怎么找」
+外行的问法一眼就能看出来，那种题练了也没用。
+
+## 追问链
+
+真实面试不是一问一答，是顺着往下挖。主问题之后跟 1-3 个追问：
+- 「讲讲这个项目」→「你具体负责哪一段」→「指标是怎么定的」→「有没有做错的地方」
+- 追问要能问出主问题答不出来的东西，不要换个说法重复问一遍
+- follows 填主问题在你输出数组里的下标（从 0 开始），主问题填 null
+- 追问的 text 里不要写「（追问）」，层级已经体现了
+
+## 其他字段
+
+- kind：behavioral（经历追问）/ technical（专业能力）/ case（情景假设）/
+  resume（简历本身：空窗、跳槽、某个数字怎么来的）/ other
+- scope：universal（换个岗位也会问，问的是这个人）/
+  domain（这个业务域特有，换方向就不问了）
+- rationale：**用你作为面试官的口吻**写「我为什么问这题」，一句话。
+  写「想确认他是不是真的主导过，还是只是参与」，不要写「考察项目管理能力」
+- cluster：措辞不同本质相同的题归一簇，英文小写下划线，如 cross_team_influence
+- source：这题主要由岗位要求（role）、候选人经历（material）、
+  还是外部情报（inbox）驱动
+
+主问题出 10-14 道，加上追问总共 20-35 条。宁可少而准，不要凑数。`;
 
 const SCHEMA = {
   type: "object",
@@ -31,15 +74,19 @@ const SCHEMA = {
             type: "string",
             enum: ["behavioral", "technical", "case", "resume", "other"],
           },
-          rationale: { type: "string", description: "为什么会问这题，一句话" },
+          scope: { type: "string", enum: ["universal", "domain"] },
+          rationale: { type: "string", description: "面试官口吻的「我为什么问这题」" },
           cluster: { type: "string", description: "同类问题的簇名，英文小写下划线" },
+          follows: {
+            type: ["integer", "null"],
+            description: "这是对哪道题的追问，填那道题在本数组里的下标；主问题填 null",
+          },
           source: {
             type: "string",
             enum: ["role", "material", "inbox"],
-            description: "这题主要由岗位要求、候选人经历、还是外部情报驱动",
           },
         },
-        required: ["text", "kind", "rationale", "cluster", "source"],
+        required: ["text", "kind", "scope", "rationale", "cluster", "follows", "source"],
         additionalProperties: false,
       },
     },
@@ -51,65 +98,106 @@ const SCHEMA = {
 export interface QuestionInputs {
   role: {
     title: string;
-    company: string | null;
+    kind: string;
+    domain: string | null;
     responsibilities: string[];
     requirements: string[];
     niceToHave: string[];
     keywords: string[];
+    /** 各家 JD 的差异点，面试会针对性追问 */
+    variance: string[];
   };
-  experiences: { title: string; summary: string; tags: string[] }[];
-  signals: { title: string; desc: string }[];
+  /** 给原文，不只给标题——不给细节就问不出细节 */
+  experiences: { title: string; summary: string; detail: string; tags: string[] }[];
+  /** 面经里这个方向真被问过的题，作为出题的参照 */
+  wildQuestions: string[];
 }
+
+export type GeneratedQuestion = Omit<NewQuestion, "roleId"> & { follows: number | null };
 
 export async function generateQuestions(
   inputs: QuestionInputs
-): Promise<Omit<NewQuestion, "roleId">[]> {
+): Promise<GeneratedQuestion[]> {
   const roleBlock = [
-    `岗位：${inputs.role.title}${inputs.role.company ? ` @ ${inputs.role.company}` : ""}`,
+    `岗位：${inputs.role.title}`,
+    inputs.role.kind === "domain"
+      ? `业务域：${inputs.role.domain}（这个域的专门知识是考察重点）`
+      : "类型：通用型，不绑定具体业务域",
     `职责：${inputs.role.responsibilities.join("；")}`,
     `硬性要求：${inputs.role.requirements.join("；")}`,
     `加分项：${inputs.role.niceToHave.join("；") || "（无）"}`,
     `关键词：${inputs.role.keywords.join("、")}`,
-  ].join("\n");
-
-  const expBlock = inputs.experiences
-    .map((e, i) => `[${i + 1}] ${e.title} — ${e.summary}（标签：${e.tags.join("、")}）`)
+    inputs.role.variance.length > 0
+      ? `\n各家 JD 的差异点（这些是会被针对性追问的）：\n${inputs.role.variance
+          .map((v) => `- ${v}`)
+          .join("\n")}`
+      : "",
+  ]
+    .filter(Boolean)
     .join("\n");
 
-  const signalBlock =
-    inputs.signals.length > 0
-      ? inputs.signals.map((s) => `- ${s.title}：${s.desc.slice(0, 300)}`).join("\n")
-      : "（暂无）";
+  // 经历给原文。之前只给标题摘要，模型没有细节可抓，
+  // 就只能问「讲讲你的 XX 项目」这种谁都能问的题
+  const expBlock = inputs.experiences
+    .map(
+      (e, i) =>
+        `### [${i + 1}] ${e.title}\n${e.summary}\n标签：${e.tags.join("、")}\n\n${e.detail.slice(0, 1500)}`
+    )
+    .join("\n\n");
+
+  const wildBlock =
+    inputs.wildQuestions.length > 0
+      ? `这个方向的面经里，别人真被问过这些题（参照，不要照抄）：\n${inputs.wildQuestions
+          .slice(0, 40)
+          .map((q) => `- ${q}`)
+          .join("\n")}`
+      : "（暂无面经参照）";
 
   const { object } = await callLLMObject<{
     questions: {
       text: string;
       kind: string;
+      scope: string;
       rationale: string;
       cluster: string;
+      follows: number | null;
       source: string;
     }[];
   }>(
     "generate",
-    `## 岗位画像\n${roleBlock}\n\n## 候选人经历库\n${expBlock}\n\n## 外部情报\n${signalBlock}`,
+    `## 岗位画像\n${roleBlock}\n\n## 候选人经历库\n${expBlock}\n\n## 外部情报\n${wildBlock}`,
     SCHEMA,
-    { system: SYSTEM, maxOutputTokens: 8000 }
+    { system: SYSTEM, maxOutputTokens: 16000 }
   );
 
   const KINDS = ["behavioral", "technical", "case", "resume", "other"] as const;
   const SOURCES = ["role", "material", "inbox", "manual"] as const;
 
-  return (object.questions ?? [])
-    .map((q) => ({
-      text: (q.text ?? "").trim(),
-      kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
-        ? q.kind
-        : "other") as (typeof KINDS)[number],
-      rationale: (q.rationale ?? "").trim() || null,
-      clusterId: (q.cluster ?? "").trim() || null,
-      source: (SOURCES.includes(q.source as (typeof SOURCES)[number])
-        ? q.source
-        : "role") as (typeof SOURCES)[number],
-    }))
-    .filter((q) => q.text);
+  // follows 是原始下标，过滤空条目后会整体偏移，先记住原位再翻译
+  const raw = (object.questions ?? []).map((q, originalIndex) => ({
+    originalIndex,
+    text: (q.text ?? "").trim(),
+    kind: (KINDS.includes(q.kind as (typeof KINDS)[number])
+      ? q.kind
+      : "other") as (typeof KINDS)[number],
+    scope: (q.scope === "domain" ? "domain" : "universal") as "universal" | "domain",
+    rationale: (q.rationale ?? "").trim() || null,
+    clusterId: (q.cluster ?? "").trim() || null,
+    source: (SOURCES.includes(q.source as (typeof SOURCES)[number])
+      ? q.source
+      : "role") as (typeof SOURCES)[number],
+    rawFollows:
+      typeof q.follows === "number" && q.follows >= 0 && q.follows < originalIndex
+        ? q.follows
+        : null,
+  }));
+
+  const kept = raw.filter((q) => q.text);
+  const originalToKept = new Map<number, number>();
+  kept.forEach((q, i) => originalToKept.set(q.originalIndex, i));
+
+  return kept.map(({ originalIndex: _o, rawFollows, ...row }) => ({
+    ...row,
+    follows: rawFollows !== null ? (originalToKept.get(rawFollows) ?? null) : null,
+  }));
 }

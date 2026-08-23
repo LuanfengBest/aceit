@@ -98,6 +98,21 @@ export const roleProfiles = sqliteTable("role_profiles", {
   niceToHave: text("nice_to_have").notNull().default("[]"),
   /** 能力关键词，JSON 字符串数组。用来和 experiences.tags 对齐 */
   keywords: text("keywords").notNull().default("[]"),
+  /**
+   * generalist：偏通用的 AI 产品经理，多家 JD 共性很强，该合成一个画像。
+   * domain：绑定某个业务域（搜索、导购、内容生成），要求不一样，单独成画像。
+   * 分开是因为出题时的侧重完全不同——通用画像考通用能力，
+   * 领域画像还要考这个域的专门知识。
+   */
+  kind: text("kind", { enum: ["generalist", "domain"] }).notNull().default("generalist"),
+  /** domain 画像绑的业务域，如「搜索推荐」「AI导购」。generalist 为空 */
+  domain: text("domain"),
+  /**
+   * 各家 JD 的差异点，JSON 数组。
+   * 聚合成一个画像会抹掉细节，但「米哈游特别看重游戏化场景」这种
+   * 是面试时真会被问到的，得留住
+   */
+  variance: text("variance").notNull().default("[]"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -266,3 +281,26 @@ export const insights = sqliteTable("insights", {
 
 export type Insight = typeof insights.$inferSelect;
 export type NewInsight = typeof insights.$inferInsert;
+
+/**
+ * 一个岗位画像底下挂的原始 JD。
+ *
+ * 之前一份 JD 一个画像，贴了四份 AI 产品经理的 JD 就出来四个同名 tab，
+ * 又重复又没提炼出共性。改成多份 JD 聚合成一个画像，原文都留着——
+ * 聚合是有损的，回头要核对某家具体怎么写的还得看原文。
+ */
+export const roleJds = sqliteTable("role_jds", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  roleId: integer("role_id")
+    .notNull()
+    .references(() => roleProfiles.id, { onDelete: "cascade" }),
+  company: text("company"),
+  title: text("title"),
+  rawJd: text("raw_jd").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export type RoleJd = typeof roleJds.$inferSelect;
+export type NewRoleJd = typeof roleJds.$inferInsert;

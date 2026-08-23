@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { questions, roleProfiles, experiences, inboxItems } from "@/lib/db/schema";
+import { questions, roleProfiles, experiences } from "@/lib/db/schema";
 import { generateQuestions } from "@/lib/generate-questions";
 
 export const dynamic = "force-dynamic";
@@ -40,28 +40,40 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // inbox 里已处理的素材当情报用
-  const signals = db.select().from(inboxItems).all();
+  // 面经里这个方向真被问过的题，当出题的参照。
+  // 给题本身比给素材原文有用——出题时要看的是「别人被问了什么」
+  const wild = db
+    .select({ text: questions.text })
+    .from(questions)
+    .where(
+      and(
+        eq(questions.source, "inbox"),
+        isNull(questions.mergedInto),
+        isNull(questions.parentId)
+      )
+    )
+    .all()
+    .map((q) => q.text);
 
   try {
     const generated = await generateQuestions({
       role: {
         title: role.title,
-        company: role.company,
+        kind: role.kind,
+        domain: role.domain,
         responsibilities: list(role.responsibilities),
         requirements: list(role.requirements),
         niceToHave: list(role.niceToHave),
         keywords: list(role.keywords),
+        variance: list(role.variance),
       },
       experiences: exps.map((e) => ({
         title: e.title,
         summary: e.summary,
+        detail: e.detail ?? "",
         tags: list(e.tags),
       })),
-      signals: signals.map((s) => ({
-        title: s.title ?? "(无标题)",
-        desc: s.desc ?? "",
-      })),
+      wildQuestions: wild,
     });
 
     if (generated.length === 0) {
@@ -70,11 +82,34 @@ export async function POST(req: NextRequest) {
 
     // 重新生成时清掉这个岗位上一批题（答案随之级联删除）
     db.delete(questions).where(eq(questions.roleId, roleId)).run();
-    db.insert(questions)
-      .values(generated.map((q) => ({ ...q, roleId })))
-      .run();
 
-    return NextResponse.json({ roleId, count: generated.length }, { status: 201 });
+    // 先插主问题拿到 id，再回填追问的 parent_id——
+    // follows 是数组下标，落库要翻译成真实 id
+    const ids: number[] = [];
+    for (const q of generated) {
+      const { follows: _f, ...row } = q;
+      const r = db.insert(questions).values({ ...row, roleId }).run();
+      ids.push(Number(r.lastInsertRowid));
+    }
+    let linked = 0;
+    generated.forEach((q, i) => {
+      if (q.follows === null || ids[q.follows] === undefined) return;
+      db.update(questions)
+        .set({ parentId: ids[q.follows] })
+        .where(eq(questions.id, ids[i]))
+        .run();
+      linked++;
+    });
+
+    return NextResponse.json(
+      {
+        roleId,
+        count: generated.length,
+        mains: generated.length - linked,
+        followUps: linked,
+      },
+      { status: 201 }
+    );
   } catch (err) {
     return NextResponse.json(
       { error: `出题失败：${err instanceof Error ? err.message : String(err)}` },
