@@ -6,7 +6,13 @@ import * as schema from "./schema";
 
 // 演示站用另一份库（不含任何真实内容），本地跑还是 aceit.db。
 // 走环境变量而不是判断 DEMO_MODE，是为了本地也能临时切过去验证
-const DB_FILE = process.env.DB_FILE ?? "data/aceit.db";
+// 演示模式下默认走 demo.db。
+// 不这样兜底的话：忘了设 DB_FILE → 应用读 aceit.db（容器里是空的），
+// 而 seed 脚本建的是 demo.db → 两边对不上，整站 no such table，
+// 而且不报错、只是空白，很难看出是配置问题
+const DB_FILE =
+  process.env.DB_FILE ??
+  (process.env.DEMO_MODE === "1" ? "data/demo.db" : "data/aceit.db");
 
 type DB = ReturnType<typeof drizzle<typeof schema>>;
 let cached: DB | null = null;
