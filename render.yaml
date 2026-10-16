@@ -1,0 +1,36 @@
+# Render 的 Blueprint。放在仓库里，部署配置就不只活在某个人的控制台里。
+#
+# 和 Railway 那份的区别：
+# - 没有 nixpacks.toml 这一层，Render 直接给一个 Ubuntu 环境，
+#   python3 / gcc / make 本来就有，better-sqlite3 能原地编译
+# - 没装 ffmpeg。演示站的 middleware 本来就把转写类路由挡掉了，
+#   装了也用不上（真要开，得换成 Docker 或者 apt 装，Render 的原生运行时没法加系统包）
+services:
+  - type: web
+    name: aceit-demo
+    runtime: node
+    plan: free
+    # Render 没有香港区，新加坡是离大陆最近的。
+    # 如果 free 档在这个区开不了，换 oregon
+    region: singapore
+
+    buildCommand: npm ci && npm run build
+    # start:demo 会先检查库里有没有表，没有就现 seed 一份再启动。
+    # Render 免费档的磁盘是临时的，每次冷启动都会重来一遍——这里正好不用改
+    startCommand: npm run start:demo
+
+    healthCheckPath: /
+
+    envVars:
+      - key: DEMO_MODE
+        value: "1"
+      - key: DB_FILE
+        value: data/demo.db
+      # better-sqlite3 11.x 对 Node 24 没有预编译包，会现编译，容易出岔子。
+      # 钉在 22 走预编译那条路
+      - key: NODE_VERSION
+        value: "22"
+      # sync: false = 不写进仓库，在 Render 控制台里单独填。
+      # key 不该出现在版本库里，也不该经我的手
+      - key: ANTHROPIC_API_KEY
+        sync: false
