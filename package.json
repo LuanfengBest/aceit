@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:demo": "DB_FILE=data/demo.db next dev -p 3100",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
